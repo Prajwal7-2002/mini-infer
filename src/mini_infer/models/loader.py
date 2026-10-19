@@ -2,11 +2,9 @@ import json
 from pathlib import Path
 
 import torch
-from safetensors.torch import load_file
 
 from mini_infer.models.config import Qwen2Config
 from mini_infer.models.qwen2 import Qwen2ForCausalLM
-
 
 DT_MAP = {
     "BF16": torch.bfloat16,
