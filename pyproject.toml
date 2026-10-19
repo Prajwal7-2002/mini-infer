@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "A minimal, high-performance continuous-batching LLM inference engine with paged KV-cache, prefix caching, and speculative decoding for Qwen2.5."
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [{ name = "Prajwal Pujari", email = "prajwalpujari16@gmail.com" }]
 keywords = ["llm", "inference", "continuous-batching", "paged-attention", "kv-cache", "speculative-decoding", "qwen2.5", "serving"]
