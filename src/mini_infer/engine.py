@@ -1,0 +1,151 @@
+import torch
+
+from mini_infer.cache.block_pool import BlockPool
+from mini_infer.cache.prefix_cache import PrefixCache
+from mini_infer.models.config import Qwen2Config
+from mini_infer.models.qwen2 import Qwen2ForCausalLM
+from mini_infer.models.sampler import sample_next_token
+from mini_infer.scheduler.continuous import (
+    ContinuousScheduler,
+    Sequence,
+    SequenceStatus,
+)
+
+
+class InferenceEngine:
+    """End-to-End LLM Serving Engine combining Model, Paged KV-Cache, Prefix Cache, and Continuous Batching."""
+
+    def __init__(
+        self,
+        model: Qwen2ForCausalLM,
+        config: Qwen2Config,
+        num_blocks: int = 256,
+        block_size: int = 16,
+        max_batch_size: int = 8,
+        enable_prefix_caching: bool = True,
+        device: torch.device | None = None,
+    ):
+        if device is None:
+            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model
+        self.config = config
+        self.device = device
+        self.block_size = block_size
+        self.enable_prefix_caching = enable_prefix_caching
+
+        # 1. Paged KV memory pool
+        self.block_pool = BlockPool(
+            num_blocks=num_blocks,
+            block_size=block_size,
+            num_layers=config.num_hidden_layers,
+            num_kv_heads=config.num_key_value_heads,
+            head_dim=config.head_dim,
+            device=device,
+            dtype=next(model.parameters()).dtype,
+        )
+
+        # 2. Prefix Cache (Radix / Hash based)
+        self.prefix_cache = PrefixCache(block_size=block_size) if enable_prefix_caching else None
+
+        # 3. Continuous Batching Scheduler
+        self.scheduler = ContinuousScheduler(
+            block_pool=self.block_pool,
+            max_batch_size=max_batch_size,
+        )
+
+    def add_request(
+        self,
+        prompt_token_ids: list[int],
+        max_tokens: int = 128,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        request_id: str | None = None,
+    ) -> Sequence:
+        """Submit a new request to the waiting queue."""
+        seq = Sequence(
+            prompt_token_ids=prompt_token_ids,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            request_id=request_id,
+        )
+        self.scheduler.add_sequence(seq)
+        return seq
+
+    def step(self) -> list[tuple[Sequence, int]]:
+        """Execute a single continuous batching iteration step.
+
+        Returns:
+            List of (sequence, newly_generated_token_id) for each active request in this step.
+        """
+        prefill_seqs, decode_seqs = self.scheduler.schedule()
+        step_outputs: list[tuple[Sequence, int]] = []
+
+        # 1. Handle Prefill Sequences (newly admitted requests)
+        for seq in prefill_seqs:
+            input_tokens = seq.prompt_token_ids
+
+            # Prefix caching check
+            cached_blocks = []
+            num_cached = 0
+            if self.prefix_cache:
+                cached_blocks, num_cached = self.prefix_cache.match_prefix(input_tokens, self.block_pool)
+                seq.block_table.physical_block_ids.extend(cached_blocks)
+                seq.block_table.num_tokens = num_cached
+
+            # Uncached prompt tokens that must be computed
+            uncached_tokens = input_tokens[num_cached:]
+            if not uncached_tokens:
+                # Prompt was 100% cached!
+                uncached_tokens = [input_tokens[-1]]
+                seq.block_table.num_tokens -= 1
+
+            # Allocate slots for uncached tokens
+            for _ in uncached_tokens:
+                seq.block_table.append_slot(self.block_pool)
+
+            # Model forward pass for prefill
+            input_tensor = torch.tensor([uncached_tokens], dtype=torch.long, device=self.device)
+            with torch.no_grad():
+                logits, _ = self.model(input_tensor)
+
+            # Sample first output token
+            next_token = sample_next_token(
+                logits[:, -1, :],
+                temperature=seq.temperature,
+                top_p=seq.top_p,
+            ).item()
+
+            seq.append_token(next_token)
+            step_outputs.append((seq, next_token))
+
+            # Register completed prompt blocks into prefix cache
+            if self.prefix_cache:
+                full_blocks_count = len(input_tokens) // self.block_size
+                for b_idx in range(len(cached_blocks), full_blocks_count):
+                    block_id = seq.block_table.physical_block_ids[b_idx]
+                    prefix_chunk = tuple(input_tokens[: (b_idx + 1) * self.block_size])
+                    self.prefix_cache.insert_prefix_block(prefix_chunk, block_id, self.block_pool)
+
+        # 2. Handle Decode Sequences (all running streams generate 1 token concurrently)
+        for seq in decode_seqs:
+            if seq.status == SequenceStatus.FINISHED:
+                continue
+
+            last_token = seq.output_token_ids[-1]
+            seq.block_table.append_slot(self.block_pool)
+
+            input_tensor = torch.tensor([[last_token]], dtype=torch.long, device=self.device)
+            with torch.no_grad():
+                logits, _ = self.model(input_tensor)
+
+            next_token = sample_next_token(
+                logits[:, -1, :],
+                temperature=seq.temperature,
+                top_p=seq.top_p,
+            ).item()
+
+            seq.append_token(next_token)
+            step_outputs.append((seq, next_token))
+
+        return step_outputs
