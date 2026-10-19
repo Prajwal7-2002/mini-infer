@@ -59,6 +59,7 @@ class InferenceEngine:
         max_tokens: int = 128,
         temperature: float = 0.0,
         top_p: float = 1.0,
+        stop_token_ids: set[int] | None = None,
         request_id: str | None = None,
     ) -> Sequence:
         """Submit a new request to the waiting queue."""
@@ -67,6 +68,7 @@ class InferenceEngine:
             max_tokens=max_tokens,
             temperature=temperature,
             top_p=top_p,
+            stop_token_ids=stop_token_ids,
             request_id=request_id,
         )
         self.scheduler.add_sequence(seq)
@@ -107,7 +109,8 @@ class InferenceEngine:
             # Model forward pass for prefill
             input_tensor = torch.tensor([uncached_tokens], dtype=torch.long, device=self.device)
             with torch.no_grad():
-                logits, _ = self.model(input_tensor)
+                logits, past_kv = self.model(input_tensor)
+            seq.past_key_values = past_kv
 
             # Sample first output token
             next_token = sample_next_token(
@@ -137,7 +140,8 @@ class InferenceEngine:
 
             input_tensor = torch.tensor([[last_token]], dtype=torch.long, device=self.device)
             with torch.no_grad():
-                logits, _ = self.model(input_tensor)
+                logits, past_kv = self.model(input_tensor, past_key_values=seq.past_key_values)
+            seq.past_key_values = past_kv
 
             next_token = sample_next_token(
                 logits[:, -1, :],

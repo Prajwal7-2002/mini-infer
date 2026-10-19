@@ -32,6 +32,7 @@ class Sequence:
 
         self.status = SequenceStatus.WAITING
         self.block_table = BlockTable(block_size=16)
+        self.past_key_values = None
 
     @property
     def num_prompt_tokens(self) -> int:
@@ -54,6 +55,7 @@ class Sequence:
     def free(self, block_pool: BlockPool):
         """Release allocated physical blocks back to the memory pool."""
         self.block_table.free(block_pool)
+        self.past_key_values = None
 
 
 class ContinuousScheduler:

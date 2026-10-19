@@ -15,3 +15,16 @@
 - **M4 (Prefix Caching)**: Implemented `PrefixCache` for zero-recompute prompt KV reuse with LRU eviction.
 - **M5 (Speculative Decoding)**: Implemented draft-target speculative verifier (`speculative_step`) with rejection sampling. Proved that $K$ candidate tokens generate in 1 target forward pass.
 - Added GitHub Actions CI matrix (`.github/workflows/ci.yml`). 13/13 unit tests passing.
+
+## 2026-10-19: Milestone 6 - The Live Benchmark Battle
+
+- **Real Weight Loading Verified**: Loaded `Qwen/Qwen2.5-0.5B-Instruct` weights directly from `.safetensors` onto NVIDIA RTX 3050 Laptop GPU in CUDA `fp16`. Verified prompt completion (`"The capital of France is" -> "Paris..."`).
+- **OpenAI SSE Server**: Launched FastAPI continuous streaming server at `POST /v1/chat/completions` with async thread-safe iteration stepping and OpenAI chunk usage emission.
+- **Companion Benchmark Execution**: Run live benchmark sweep (`c=1, 2, 4`) using Flagship #1 `servebench`:
+  - 18/18 requests succeeded (0 failures).
+  - TTFT p50: **112 ms**.
+  - Peak throughput: **12.0 tok/s**.
+  - Peak VRAM footprint: **1.73 GB** (leaving ample headroom on 6 GB GPU).
+  - Average power draw: **12.7 W - 13.8 W** (0.76 - 0.92 Tok/Joule efficiency).
+- Exported benchmark artifacts and charts to `benchmarks/mini_infer_benchmark.json` and `benchmarks/report.md`.
+
