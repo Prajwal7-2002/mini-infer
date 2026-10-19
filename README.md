@@ -6,11 +6,11 @@
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.4%2B-ee4c2c)
 [![Hardware](https://img.shields.io/badge/GPU-RTX%203050%20%7C%20Kaggle%20T4-green.svg)](#)
 
-A minimal, educational, and high-performance **continuous-batching LLM inference engine** with **Paged KV-cache**, **prefix caching**, and **speculative decoding** built from scratch in Python and PyTorch.
+A minimal, educational, and high-performance **continuous-batching LLM inference engine** with **Paged KV-cache**, **radix prefix caching**, and **speculative decoding** built from scratch in pure Python and PyTorch.
 
 Most developers only know how to *call* an inference engine (`ollama run` or `vllm serve`). The actual systems algorithms—how tensors are paged in VRAM to eliminate fragmentation, how continuous batching schedules requests at the iteration level, how prefix caching avoids redundant prefills, and how speculative decoding generates multiple tokens per forward pass—are locked behind tens of thousands of lines of complex C++/CUDA.
 
-**mini-infer** implements these exact production algorithms in **pure, readable, testable Python/PyTorch** designed to run on a single consumer GPU (such as an entry-level 6 GB laptop GPU or a free Kaggle T4).
+**mini-infer** implements these exact production algorithms in **pure, readable, testable Python/PyTorch** designed to run on a single consumer GPU (such as an entry-level 6 GB laptop GPU or a free Kaggle T4), with **zero C++ compiler or CMake toolchain required**.
 
 ---
 
@@ -48,7 +48,131 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 
 ---
 
-## 🔑 The Four Systems Breakthroughs Explained
+## ⏱️ Quickstart: Up and Running in 60 Seconds
+
+### Step 1: Install Dependencies
+
+> [!NOTE]
+> Unlike vLLM or llama.cpp, **mini-infer requires NO C++ compilers, Visual Studio Build Tools, or CMake**. It runs entirely using standard PyTorch wheels!
+
+**With [uv](https://docs.astral.sh/uv/) (Recommended & fastest):**
+```bash
+git clone https://github.com/Prajwal7-2002/mini-infer.git
+cd mini-infer
+uv sync
+```
+
+**With standard pip & virtualenv:**
+```bash
+git clone https://github.com/Prajwal7-2002/mini-infer.git
+cd mini-infer
+python -m venv .venv
+
+# Windows
+.venv\Scripts\activate
+# Linux / macOS
+source .venv/bin/activate
+
+pip install -e .
+```
+
+---
+
+### Step 2: Check Hardware Diagnostics
+Verify your GPU and memory allocation plan:
+```bash
+uv run mini-infer info
+```
+```text
+mini-infer System Diagnostics
+PyTorch version: 2.6.0+cu124
+CUDA available: True
+GPU Device: NVIDIA GeForce RTX 3050 6GB Laptop GPU
+Total VRAM: 6.00 GB
+
+Memory Allocation Plan (RTX 3050 6 GB):
+  • Qwen2.5-1.5B (Target Model): ~3.0 GB VRAM
+  • Qwen2.5-0.5B (Draft Model):  ~1.0 GB VRAM
+  • Paged KV-Cache Memory Pool:  ~1.5 GB VRAM (~2000 blocks)
+  • Safety Buffer:               ~0.5 GB
+```
+
+---
+
+### Step 3: Launch the Streaming Server
+Start serving `Qwen2.5-0.5B-Instruct` (model weights will download automatically from Hugging Face on the first run):
+```bash
+uv run mini-infer serve --port 8000
+```
+```text
+mini-infer serving Qwen/Qwen2.5-0.5B-Instruct on 127.0.0.1:8000 (cuda)
+Loading tokenizer...
+Loading model weights...
+Streaming weights from 1 safetensors file(s) into cuda (torch.bfloat16)...
+Initializing Paged KV-Cache (256 blocks of size 16)...
+Server ready! Connect any OpenAI-compatible client or run servebench quick against http://127.0.0.1:8000/v1
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+---
+
+### Step 4: Stream Tokens (Choose your client)
+
+#### Option A: Quick `curl` terminal command
+```bash
+curl -N http://127.0.0.1:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen2.5-0.5b",
+    "messages": [{"role": "user", "content": "Explain Paged KV-Cache in 1 sentence."}],
+    "stream": true
+  }'
+```
+
+#### Option B: Standard Python Streaming
+```python
+import urllib.request, json
+
+data = json.dumps({
+    "model": "qwen2.5-0.5b",
+    "messages": [{"role": "user", "content": "Explain continuous batching in 1 sentence."}],
+    "stream": True,
+}).encode("utf-8")
+
+req = urllib.request.Request(
+    "http://127.0.0.1:8000/v1/chat/completions",
+    data=data,
+    headers={"Content-Type": "application/json"}
+)
+
+for line in urllib.request.urlopen(req):
+    text = line.decode("utf-8")
+    if text.startswith("data: ") and not text.startswith("data: [DONE]"):
+        chunk = json.loads(text[6:])
+        print(chunk["choices"][0]["delta"].get("content", ""), end="", flush=True)
+print()
+```
+
+#### Option C: Official OpenAI Python SDK
+Because `mini-infer` implements standard OpenAI streaming protocols, it works out of the box with `openai-python`, LangChain, and Open-WebUI:
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="none")
+
+response = client.chat.completions.create(
+    model="qwen2.5-0.5b",
+    messages=[{"role": "user", "content": "Hello mini-infer!"}],
+    stream=True,
+)
+
+for chunk in response:
+    print(chunk.choices[0].delta.content or "", end="", flush=True)
+```
+
+---
+
+## ⚡ The Four Systems Breakthroughs Explained
 
 ### 1. Paged KV-Cache (Virtual Memory Management)
 Standard PyTorch caches allocate contiguous tensors for each sequence up to `max_seq_len`. This causes **over 60% memory waste** due to internal and external VRAM fragmentation.
@@ -117,52 +241,70 @@ Evaluated live on **NVIDIA GeForce RTX 3050 6GB Laptop GPU** using zero-overhead
 
 ---
 
-## 🚀 Quickstart
+## 💻 Python Programmatic API
 
-### 1. Installation
+Want to experiment with the engine directly inside Python scripts or Jupyter Notebooks without launching the HTTP server?
 
-Clone and install dependencies using [uv](https://docs.astral.sh/uv/):
-```bash
-git clone https://github.com/Prajwal7-2002/mini-infer.git
-cd mini-infer
-uv sync
-```
-Or via pip:
-```bash
-pip install -e .
-```
-
-### 2. Check System Diagnostics
-```bash
-uv run mini-infer info
-```
-Displays CUDA capability, allocated VRAM budget, and model sizing plans.
-
-### 3. Launch the Server
-```bash
-uv run mini-infer serve --model Qwen/Qwen2.5-0.5B-Instruct --port 8000
-```
-
-### 4. Stream Tokens (OpenAI-compatible)
 ```python
-import urllib.request, json
+import torch
+from mini_infer.engine import InferenceEngine
+from mini_infer.models.loader import load_model_from_safetensors
 
-data = json.dumps({
-    "model": "qwen2.5-0.5b",
-    "messages": [{"role": "user", "content": "Explain continuous batching in 1 sentence."}],
-    "stream": True,
-}).encode("utf-8")
+# 1. Load weights directly from safetensors with zero host memory duplication
+model, config = load_model_from_safetensors("Qwen/Qwen2.5-0.5B-Instruct", device="cuda")
 
-req = urllib.request.Request("http://127.0.0.1:8000/v1/chat/completions", data=data, headers={"Content-Type": "application/json"})
-for line in urllib.request.urlopen(req):
-    print(line.decode("utf-8"), end="")
+# 2. Initialize the Paged KV engine
+engine = InferenceEngine(
+    model=model,
+    config=config,
+    num_blocks=256,
+    block_size=16,
+    device=torch.device("cuda"),
+)
+
+# 3. Submit a prompt and step the continuous batching scheduler
+prompt_ids = [785, 6722, 315, 9625, 374]  # "The capital of France is"
+req_id = engine.add_request(prompt_tokens=prompt_ids, max_tokens=10)
+
+# 4. Iterate scheduler until request finishes
+while not engine.is_finished(req_id):
+    outputs = engine.step()
+    for seq_id, new_token in outputs:
+        if seq_id == req_id:
+            print(f"Generated token ID: {new_token}")
 ```
 
-### 5. Benchmark with servebench
-`mini-infer` is auto-detected as a first-class engine by [servebench](https://github.com/Prajwal7-2002/servebench):
+---
+
+## ❓ Frequently Asked Questions (FAQ)
+
+<details>
+<summary><b>1. Do I need an expensive GPU to run mini-infer?</b></summary>
+
+**No.** `mini-infer` is specifically engineered to run within the memory constraints of consumer laptop GPUs (like an NVIDIA RTX 3050 6GB) and free cloud tiers (Kaggle or Google Colab T4). It also features automatic CPU fallback via `--device cpu`.
+</details>
+
+<details>
+<summary><b>2. How are model weights downloaded?</b></summary>
+
+Weights are automatically fetched on the first run via `huggingface_hub` and cached locally in `~/.cache/huggingface/`. You do not need to convert or manually download `.bin` or `.gguf` files.
+</details>
+
+<details>
+<summary><b>3. How do I run the automated test suite?</b></summary>
+
+Run the test suite using `pytest`:
 ```bash
-servebench run --url http://127.0.0.1:8000/v1 --model qwen2.5-0.5b --concurrency 1,2,4
+uv run pytest -v
 ```
+All 13 unit tests cover block allocation, continuous scheduling, prefix hash matching, and speculative rejection verification.
+</details>
+
+<details>
+<summary><b>4. How does mini-infer pair with servebench?</b></summary>
+
+[servebench](https://github.com/Prajwal7-2002/servebench) was built as Flagship #1 of our portfolio to rigorously measure local LLM engines. When `mini-infer` is running, `servebench` automatically detects it at `GET /health` (`status: ok, engine: mini-infer`) and provides instant TTFT, TPOT, and throughput cards.
+</details>
 
 ---
 
