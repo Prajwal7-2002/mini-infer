@@ -146,14 +146,18 @@ class Qwen2Attention(nn.Module):
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-        # Scaled dot product attention
-        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+        # Scaled dot product attention (hardware-accelerated SDPA with numerical stability)
+        if attention_mask is not None and attention_mask.dtype != query_states.dtype and attention_mask.dtype != torch.bool:
+            attention_mask = attention_mask.to(query_states.dtype)
 
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask
-
-        attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_output = torch.matmul(attn_weights, value_states)
+        attn_output = F.scaled_dot_product_attention(
+            query_states,
+            key_states,
+            value_states,
+            attn_mask=attention_mask,
+            dropout_p=0.0,
+            is_causal=False,
+        )
 
         attn_output = attn_output.transpose(1, 2).contiguous()
         attn_output = attn_output.reshape(batch_size, seq_len, -1)
@@ -226,8 +230,7 @@ class Qwen2Model(nn.Module):
         # Causal mask for prefill
         if attention_mask is None and seq_len > 1:
             total_len = position_ids.max().item() + 1
-            mask = torch.full((seq_len, total_len), torch.finfo(hidden_states.dtype).min, device=input_ids.device)
-            mask = torch.triu(mask, diagonal=total_len - seq_len + 1)
+            mask = torch.ones((seq_len, total_len), device=input_ids.device, dtype=torch.bool).tril(diagonal=total_len - seq_len)
             attention_mask = mask[None, None, :, :]
 
         new_past_key_values = []

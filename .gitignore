@@ -13,7 +13,6 @@ checkpoints/
 *.bin
 *.pt
 ~/.cache/
-
-# Personal study & architecture scratchpad
+# Personal study notes, not part of the repo
 decisions.md
 flow.md
