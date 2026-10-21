@@ -16,6 +16,7 @@ class ChatMessage(BaseModel):
 
 
 class ChatCompletionRequest(BaseModel):
+    model_config = {"extra": "ignore"}
     model: str = "qwen2.5-0.5b"
     messages: list[ChatMessage]
     temperature: float = 0.0
@@ -176,19 +177,25 @@ async def chat_completions(request: ChatCompletionRequest):
 
             await asyncio.sleep(0.001)
 
-        usage_chunk = {
+        stop_chunk = {
             "id": f"chatcmpl-{seq.request_id}",
             "object": "chat.completion.chunk",
             "created": created_time,
             "model": request.model,
-            "choices": [],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {
                 "prompt_tokens": seq.num_prompt_tokens,
                 "completion_tokens": seq.num_output_tokens,
                 "total_tokens": seq.total_tokens,
             },
         }
-        yield f"data: {json.dumps(usage_chunk)}\n\n"
+        yield f"data: {json.dumps(stop_chunk)}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")

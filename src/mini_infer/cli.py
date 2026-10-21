@@ -14,7 +14,7 @@ def serve(
     model: str = typer.Option("Qwen/Qwen2.5-0.5B-Instruct", "--model", "-m", help="Model path or HuggingFace repo ID"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host address to bind to"),
     port: int = typer.Option(8000, "--port", "-p", help="Port to listen on"),
-    num_blocks: int = typer.Option(256, "--num-blocks", help="Number of physical Paged KV blocks"),
+    num_blocks: int = typer.Option(1024, "--num-blocks", help="Number of physical Paged KV blocks"),
     block_size: int = typer.Option(16, "--block-size", help="Tokens per physical block"),
     device: str = typer.Option("auto", "--device", help="Device (cuda/cpu/auto)"),
 ):
