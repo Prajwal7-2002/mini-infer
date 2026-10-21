@@ -1,0 +1,57 @@
+site_name: mini-infer
+site_description: A minimal, high-performance continuous-batching LLM inference engine with Paged KV-cache, radix prefix caching, and speculative decoding.
+site_author: Prajwal Pujari
+site_url: https://prajwal7-2002.github.io/mini-infer/
+
+repo_name: Prajwal7-2002/mini-infer
+repo_url: https://github.com/Prajwal7-2002/mini-infer
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - navigation.tabs
+    - search.highlight
+    - search.share
+
+nav:
+  - Overview: index.md
+  - Quickstart: quickstart.md
+  - Architecture:
+      - Paged KV-Cache: architecture/paged-attention.md
+      - Radix Prefix Caching: architecture/prefix-caching.md
+      - Speculative Decoding: architecture/speculative-decoding.md
+      - Continuous Batching: architecture/continuous-batching.md
+  - Serving & API: api-reference.md
+  - Benchmarks: benchmarks.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.arithmatex:
+      generic: true
+  - tables
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js

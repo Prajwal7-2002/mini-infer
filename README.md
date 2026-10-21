@@ -1,5 +1,7 @@
 # mini-infer 🚀
 
+[![PyPI version](https://img.shields.io/pypi/v/mini-infer.svg)](https://pypi.org/project/mini-infer/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-teal.svg)](https://prajwal7-2002.github.io/mini-infer/)
 [![CI](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml/badge.svg)](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
@@ -55,7 +57,12 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 > [!NOTE]
 > Unlike vLLM or llama.cpp, **mini-infer requires NO C++ compilers, Visual Studio Build Tools, or CMake**. It runs entirely using standard PyTorch wheels!
 
-**With [uv](https://docs.astral.sh/uv/) (Recommended & fastest):**
+**Direct from PyPI:**
+```bash
+pip install mini-infer
+```
+
+**From source with [uv](https://docs.astral.sh/uv/) (Recommended for development):**
 ```bash
 git clone https://github.com/Prajwal7-2002/mini-infer.git
 cd mini-infer
