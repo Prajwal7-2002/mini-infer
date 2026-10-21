@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use this software in your research, systems, or benchmarks, please cite it as below."
+title: "mini-infer: Minimal Continuous-Batching LLM Inference Engine"
+authors:
+  - family-names: "Pujari"
+    given-names: "Prajwal"
+date-released: 2026-10-21
+version: "0.1.0"
+repository-code: "https://github.com/Prajwal7-2002/mini-infer"
+url: "https://prajwal7-2002.github.io/mini-infer/"
+keywords:
+  - llm-inference
+  - continuous-batching
+  - paged-attention
+  - prefix-caching
+  - speculative-decoding
+  - pytorch
+license: "Apache-2.0"

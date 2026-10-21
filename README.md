@@ -356,4 +356,20 @@ mini-infer/
 
 ## 📄 License
 
-Apache 2.0 — free for commercial, research, and educational use.
+Apache 2.0 — Copyright (c) 2026 Prajwal Pujari. Free for commercial, research, and educational use. See [LICENSE](LICENSE) for details.
+
+---
+
+## 📌 Citation
+
+If you use `mini-infer` in your research, systems, or performance benchmarks, please cite it as:
+
+```bibtex
+@software{pujari2026miniinfer,
+  author = {Prajwal Pujari},
+  title = {mini-infer: Minimal Continuous-Batching LLM Inference Engine with Paged KV-Cache},
+  year = {2026},
+  url = {https://github.com/Prajwal7-2002/mini-infer}
+}
+```
+
