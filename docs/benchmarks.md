@@ -48,19 +48,19 @@ Speculative decoding delivers **$\approx 2\text{x}$ throughput improvement** whi
 
 ---
 
-## 4. End-to-End Load Testing with `servebench`
+## 4. End-to-End Concurrency Benchmark with `servebench` (v0.2.0)
 
-Load testing mini-infer using [servebench](https://github.com/Prajwal7-2002/servebench):
+Measured live on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running `Qwen2.5-0.5B-Instruct` via `servebench 1.1.0`:
 
 ```bash
-servebench run \
-  --target http://127.0.0.1:8000/v1 \
-  --model Qwen/Qwen2.5-0.5B-Instruct \
-  --concurrency 8 \
-  --requests 64 \
-  --stream
+servebench run --url http://127.0.0.1:8000/v1 --model Qwen/Qwen2.5-0.5B-Instruct --concurrency 1,2,4 --num-requests 12
 ```
 
-- **Mean TTFT (Time to First Token)**: **18.4 ms** (with prefix caching enabled)
-- **Mean ITL (Inter-Token Latency)**: **15.2 ms**
-- **Goodput (Sustained Token Output)**: **65.8 tokens / second** under 8 concurrent streams on a laptop GPU.
+| Concurrency | Requests (OK / Fail) | Throughput (tok/s) | TTFT p50 (ms) | TPOT p50 (ms) | VRAM Peak (MB) | Power Avg (W) | Tok/Joule |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **c = 1** | **12 / 0** | **13.6 tok/s** | 556 ms | 70 ms | 1,544 MB | 13.4 W | **1.01** |
+| **c = 2** | **12 / 0** | **18.6 tok/s** | 1,162 ms | 98 ms | 1,548 MB | 13.1 W | **1.41** |
+| **c = 4** | **12 / 0** | **27.0 tok/s** | 2,456 ms | 126 ms | 1,634 MB | 13.2 W | **2.04** |
+
+- **Zero Memory Bottlenecks**: Peak VRAM remains capped at **1,634 MB** (< 28% of 6 GB laptop VRAM budget).
+- **Extreme Power Efficiency**: Generates **2.04 Tokens / Joule** at $c=4$ while drawing only 13.2 W of GPU package power.
