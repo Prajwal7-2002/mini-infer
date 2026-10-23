@@ -71,9 +71,45 @@ We actively welcome contributions in the following domains:
 
 ---
 
-## 📬 Pull Request Process
+## 📬 Pull Request Rules & Submission Process
 
-1. **Create a branch**: Use a descriptive name like `feat/llama3-loader` or `fix/prefix-cache-hash`.
-2. **Follow Conventional Commits**: e.g., `feat:`, `fix:`, `docs:`, `perf:`, `test:`.
-3. **Include Silicon Benchmarks**: If your PR makes a performance or memory claim, please include empirical measurements (e.g., TTFT, memory savings, or tok/s) from your local hardware.
-4. **Keep PRs Focused**: Avoid giant refactors across unrelated modules in a single PR.
+To keep the codebase maintainable and lightning-fast, all contributions must follow these strict rules:
+
+### 1. Branch Naming Conventions
+Always create a descriptive branch off `main`:
+* `feat/short-feature-name` (e.g. `feat/llama3-loader`)
+* `fix/short-bug-description` (e.g. `fix/radix-hash-collision`)
+* `perf/short-perf-description` (e.g. `perf/fp8-kv-cache`)
+* `docs/short-doc-description` (e.g. `docs/api-guide`)
+* `test/short-test-description` (e.g. `test/chunked-prefill-coverage`)
+
+### 2. Conventional Commit Standards
+Format commit messages with clear conventional commit types:
+```text
+feat(cache): add dynamic FP8 KV-cache quantization
+fix(scheduler): prevent race condition when freeing block 0
+perf(engine): optimize slot mapping tensor gather
+docs(quickstart): add Cursor IDE configuration guide
+test(repomap): add test cases for multi-level inheritance
+```
+
+### 3. Empirical Silicon Proof Required
+If your pull request makes any latency, memory, or throughput claims:
+* You **must** provide before-and-after numbers measured on real hardware.
+* State your GPU model, VRAM usage, TTFT, and throughput (`tok/s`).
+* PRs claiming "massive speedups" without empirical evidence will not be reviewed.
+
+### 4. Pull Request Template Checklist
+When opening a PR on GitHub, our automated PR template will prompt you to verify:
+- [x] Pure PyTorch Rule maintained (no C++ compilers / CMake required).
+- [x] Zero dynamic allocations inside the inner decode step (`engine.step()`).
+- [x] All unit tests pass (`uv run pytest`).
+- [x] Linter and formatter pass (`uv run ruff check` & `uv run ruff format`).
+- [x] Documentation updated and builds strictly (`uv run mkdocs build --strict`).
+
+### 5. Instant Rejection Rules (What We Cannot Accept)
+* **C++ / CUDA Build Dependencies**: Any PR that breaks standard `pip install` on a machine without Microsoft Visual C++ Build Tools or GCC will be closed.
+* **Breaking Untested Code**: PRs modifying core memory managers without comprehensive unit test coverage in `tests/`.
+* **Megapulls**: PRs containing hundreds of lines of unrelated refactors across multiple subsystems. Keep PRs small and atomic.
+
+---
