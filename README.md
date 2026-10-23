@@ -61,12 +61,22 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 > [!NOTE]
 > Unlike vLLM or llama.cpp, **mini-infer requires NO C++ compilers, Visual Studio Build Tools, or CMake**. It runs entirely using standard PyTorch wheels!
 
-**Direct from PyPI:**
+**Direct from PyPI (Standard pip):**
 ```bash
 pip install mini-infer
 ```
 
-**From source with [uv](https://docs.astral.sh/uv/) (Recommended for development):**
+**With [uv](https://docs.astral.sh/uv/) (Fastest):**
+```bash
+uv pip install mini-infer
+```
+
+**Run Immediately Without Installing (`uvx`):**
+```bash
+uvx mini-infer --help
+```
+
+**From source with uv (Recommended for development):**
 ```bash
 git clone https://github.com/Prajwal7-2002/mini-infer.git
 cd mini-infer
@@ -180,6 +190,46 @@ response = client.chat.completions.create(
 for chunk in response:
     print(chunk.choices[0].delta.content or "", end="", flush=True)
 ```
+
+---
+
+## 🧑‍💻 Coding on Your Own Codebase with mini-infer
+
+You can use `mini-infer` as a local, private copilot on any of your existing repositories without running out of memory:
+
+### 1. Index Any Project into a Dense AST Skeleton
+In your project directory, generate a token-budgeted prompt skeleton (classes, typed signatures, exports) while stripping away implementation boilerplate:
+```bash
+# Print to console
+mini-infer repomap ./src --max-tokens 1000
+
+# Or write to a markdown context file
+mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
+```
+
+### 2. Launch Local Serving with INT8 KV-Cache
+Run an instruction-tuned coding model with 50% KV DRAM savings:
+```bash
+mini-infer serve \
+  --model Qwen/Qwen2.5-Coder-1.5B-Instruct \
+  --kv-cache-dtype int8 \
+  --port 8000
+```
+
+### 3. Connect Your Editor or Agent
+Because `mini-infer` exposes standard OpenAI endpoints (`http://127.0.0.1:8000/v1`):
+* **Cursor**: Set OpenAI Base URL to `http://127.0.0.1:8000/v1`, API Key to `dummy`, and model to `Qwen/Qwen2.5-Coder-1.5B-Instruct`.
+* **VS Code (Continue)**: Set provider to `openai`, apiBase to `http://127.0.0.1:8000/v1`.
+* **Aider (Terminal Pair Programmer)**:
+  ```bash
+  export OPENAI_API_BASE=http://127.0.0.1:8000/v1
+  export OPENAI_API_KEY=dummy
+  aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
+  ```
+
+### Why This Works on a Laptop GPU:
+* **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.
+* **Radix Prefix Caching**: The 1,000-token repository skeleton stays resident in GPU memory across turns. Follow-up prompts skip prefill and start responding in **~0.5s – 1.0s (38× – 70× faster)**.
 
 ---
 

@@ -32,6 +32,9 @@ theme:
 nav:
   - Overview: index.md
   - Quickstart: quickstart.md
+  - User Guides:
+      - Coding on Large Codebases: guides/coding-projects.md
+      - IDE & Client Setup: guides/ide-setup.md
   - Architecture:
       - Paged KV-Cache: architecture/paged-attention.md
       - Radix Prefix Caching: architecture/prefix-caching.md

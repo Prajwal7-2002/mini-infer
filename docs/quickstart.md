@@ -7,13 +7,21 @@ Get an OpenAI-compatible continuous batching engine running on your local GPU in
 ## 1. Installation
 
 ### From PyPI (Standard)
-
 ```bash
 pip install mini-infer
 ```
 
-### From Source (Development with uv)
+### With `uv` (Fastest)
+```bash
+uv pip install mini-infer
+```
 
+### Run Directly with `uvx` (Zero Install)
+```bash
+uvx mini-infer --help
+```
+
+### From Source (Development with uv)
 ```bash
 git clone https://github.com/Prajwal7-2002/mini-infer.git
 cd mini-infer
@@ -50,18 +58,32 @@ Memory Allocation Plan (RTX 3050 6 GB):
 
 ---
 
-## 3. Launching the Serving Engine
+## 3. Index Your Project Codebase (`mini-infer repomap`)
 
-Start an OpenAI-compatible HTTP inference server:
-
-### Single Model Serving (Qwen2.5-0.5B)
+Before querying an LLM about your code, extract an AST skeleton (classes, method signatures, exports) into a compact prompt:
 
 ```bash
-mini-infer serve --model Qwen/Qwen2.5-0.5B-Instruct --port 8000
+# Generate a ~1000-token repository skeleton
+mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
+```
+
+See [Coding on Large Codebases](guides/coding-projects.md) for full details.
+
+---
+
+## 4. Launching the Serving Engine
+
+Start an OpenAI-compatible HTTP inference server. Pass `--kv-cache-dtype int8` to cut KV cache memory by 48.4%:
+
+### Standard Serving with INT8 KV-Cache
+```bash
+mini-infer serve \
+  --model Qwen/Qwen2.5-Coder-1.5B-Instruct \
+  --kv-cache-dtype int8 \
+  --port 8000
 ```
 
 ### Speculative Decoding (1.5B Target + 0.5B Draft)
-
 ```bash
 mini-infer serve \
   --target Qwen/Qwen2.5-1.5B-Instruct \
@@ -71,7 +93,7 @@ mini-infer serve \
 
 ---
 
-## 4. Querying the Server
+## 5. Connect Your IDE or Query via API
 
 Once running, send requests via `curl` or the standard OpenAI Python client.
 
@@ -117,13 +139,16 @@ for chunk in response:
 print()
 ```
 
+> [!TIP]
+> To connect **Cursor**, **VS Code Continue**, or **Aider**, check the [IDE & Client Setup Guide](guides/ide-setup.md).
+
 ---
 
-## 5. Running the Unit Tests
+## 6. Running the Unit Tests
 
-mini-infer includes a comprehensive unit test suite covering KV-cache memory managers, Radix tree prefix caching, and speculative verification logic:
+mini-infer includes a comprehensive unit test suite covering KV-cache memory managers, dynamic INT8 quantization, and AST repomap logic:
 
 ```bash
 uv run pytest
-# Output: 13 passed in ~50s
+# Output: 22 passed in 1.87s
 ```
