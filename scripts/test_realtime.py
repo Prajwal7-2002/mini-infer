@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+
 import torch
 from transformers import AutoTokenizer
 
@@ -91,7 +92,7 @@ def main():
 
     print(f"      Total prompt length: {len(prompt_ids_1)} tokens")
 
-    seq1 = engine.add_request(prompt_ids_1, max_tokens=60, request_id="turn-1")
+    engine.add_request(prompt_ids_1, max_tokens=60, request_id="turn-1")
 
     # Step engine & measure TTFT
     t_start = time.perf_counter()
@@ -126,7 +127,7 @@ def main():
     prompt_text_2 = tokenizer.apply_chat_template(messages_2, tokenize=False, add_generation_prompt=True)
     prompt_ids_2 = tokenizer.encode(prompt_text_2)
 
-    seq2 = engine.add_request(prompt_ids_2, max_tokens=40, request_id="turn-2")
+    engine.add_request(prompt_ids_2, max_tokens=40, request_id="turn-2")
 
     t_start_2 = time.perf_counter()
     ttft_ms_2 = None

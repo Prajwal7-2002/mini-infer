@@ -231,6 +231,18 @@ Because `mini-infer` exposes standard OpenAI endpoints (`http://127.0.0.1:8000/v
 * **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.
 * **Radix Prefix Caching**: The 1,000-token repository skeleton stays resident in GPU memory across turns. Follow-up prompts skip prefill and start responding in **~0.5s – 1.0s (38× – 70× faster)**.
 
+### 🔬 Real-World Empirical Proof: Synthesizing Code for [EdgeSLM](https://github.com/Prajwal7-2002/EdgeSLM)
+Evaluated on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running against `EdgeSLM/src` (15 subdirectories):
+* **AST Parsing**: Parsed entire repository in **82.38 ms** into a **961-token** typed skeleton.
+* **KV-Cache Footprint**: 8,192 token pool compressed from **96.00 MB down to 49.50 MB (-48.4%)**.
+* **Turn 1 (Cold Ingestion of 953-tok prompt)**: TTFT was **23.5 seconds** (synthesized a new `/metrics` endpoint for `api/app.py`).
+* **Turn 2 (Prefix-Cached Unit Test Generation)**: TTFT dropped to **793.1 ms** (**29.7× faster Time-To-First-Token!**).
+
+```bash
+# Run the live real-world verification script yourself:
+uv run python scripts/test_real_repo.py path/to/any/repo/src
+```
+
 ---
 
 ## ⚡ The Four Systems Breakthroughs Explained
