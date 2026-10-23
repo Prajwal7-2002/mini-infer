@@ -48,7 +48,7 @@ Speculative decoding delivers **$\approx 2\text{x}$ throughput improvement** whi
 
 ---
 
-## 4. End-to-End Concurrency Benchmark with `servebench` (v0.2.0)
+## 4. End-to-End Concurrency Benchmark with `servebench` (v0.2.1)
 
 Measured live on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running `Qwen2.5-0.5B-Instruct` via `servebench 1.1.0`:
 

@@ -208,19 +208,19 @@ Autoregressive decoding is memory-bandwidth bound on single tokens.
 * A larger **1.5B target model** verifies all $K$ candidates in a **single parallel forward pass**.
 * Uses **Leviathan rejection sampling** to accept or correct candidates, mathematically guaranteeing that outputs match the exact distribution of the 1.5B model alone.
 
-### 5. Unified Batched Paged Decoding & Slot Mapping (v0.2.0)
+### 5. Unified Batched Paged Decoding & Slot Mapping (v0.2.1)
 Standard naive continuous batching runs a serial Python loop over each active sequence, transferring weights from DRAM $B$ times.
-* `mini-infer v0.2.0` combines all active decodes into a single unified `[batch_size, 1]` forward pass.
+* `mini-infer v0.2.1` combines all active decodes into a single unified `[batch_size, 1]` forward pass.
 * Physical KV blocks are gathered directly from the pre-allocated `BlockPool` into sequence-masked tensor slots, achieving up to **4× reduction in GPU DRAM memory bandwidth**.
 
-### 6. Chunked Prefill & Memory Pressure Preemption (v0.2.0)
+### 6. Chunked Prefill & Memory Pressure Preemption (v0.2.1)
 Burst prompt arrivals can starve active decode sequences and cause high Inter-Token Latency (ITL) spikes or physical block exhaustion.
 * **Chunked Prefill**: Bounded prompt prefill slices (`chunked_prefill_size=512`) interleave long prompt ingestion with active token generation.
 * **Preemption Recovery**: When the physical block pool exhausts under burst concurrency, the scheduler preempts lowest-priority sequences back to `WAITING` instead of crashing with OOM.
 
 ---
 
-## ⚡ Real-World Benchmarks on Real Hardware (v0.2.0)
+## ⚡ Real-World Benchmarks on Real Hardware (v0.2.1)
 
 Measured live using Flagship #1 [servebench](https://github.com/Prajwal7-2002/servebench) on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running `Qwen2.5-0.5B-Instruct` in pure PyTorch CUDA with unified batched paged decoding:
 
