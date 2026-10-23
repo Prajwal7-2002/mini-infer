@@ -492,6 +492,24 @@ mini-infer/
 
 ---
 
+## 🤝 Contributing
+
+We welcome contributions from systems engineers, performance enthusiasts, and AI researchers! Whether you want to add support for a new model architecture (Llama-3, Gemma-2), optimize memory layouts, or implement dynamic scheduling algorithms, we would love your help.
+
+### Getting Started:
+1. Check the [Contributing Guide](CONTRIBUTING.md) for architectural invariants and code standards.
+2. Ensure all additions maintain the **Pure PyTorch Rule** (zero C++ compiler or CMake build dependencies).
+3. Run tests and lint checks before opening a pull request:
+   ```bash
+   uv run pytest
+   uv run ruff check src tests scripts
+   uv run ruff format src tests scripts
+   ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines, pull request conventions, and high-value areas for contribution.
+
+---
+
 ## 📄 License
 
 Apache 2.0 — Copyright (c) 2026 Prajwal Pujari. Free for commercial, research, and educational use. See [LICENSE](LICENSE) for details.

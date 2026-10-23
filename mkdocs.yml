@@ -42,6 +42,7 @@ nav:
       - Continuous Batching: architecture/continuous-batching.md
   - Serving & API: api-reference.md
   - Benchmarks: benchmarks.md
+  - Contributing: contributing.md
 
 markdown_extensions:
   - admonition
