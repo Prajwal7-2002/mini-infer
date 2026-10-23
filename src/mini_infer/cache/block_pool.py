@@ -87,6 +87,113 @@ class BlockPool:
         for b_id in block_ids:
             self.free_block(b_id)
 
+    def write_slot(
+        self,
+        layer_idx: int,
+        block_id: int,
+        slot_offset: int,
+        k_slot: torch.Tensor,
+        v_slot: torch.Tensor,
+    ) -> None:
+        """Write key and value states for a single token slot into physical block pool."""
+        if k_slot.dim() == 3:
+            k_slot = k_slot.squeeze(0)
+            v_slot = v_slot.squeeze(0)
+        self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_slot
+        self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_slot
+
+    def write_sequence_kv(
+        self,
+        layer_idx: int,
+        physical_block_ids: list[int],
+        start_token_idx: int,
+        k_seq: torch.Tensor,
+        v_seq: torch.Tensor,
+    ) -> None:
+        """Write a sequence of key and value states into physical block pool."""
+        if k_seq.dim() == 4:
+            k_seq = k_seq.squeeze(0)
+            v_seq = v_seq.squeeze(0)
+        num_tokens = k_seq.shape[1]
+        for i in range(num_tokens):
+            token_pos = start_token_idx + i
+            block_idx = token_pos // self.block_size
+            slot_offset = token_pos % self.block_size
+            block_id = physical_block_ids[block_idx]
+            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_seq[:, i, :]
+            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_seq[:, i, :]
+
+    def read_sequence_kv(
+        self,
+        layer_idx: int,
+        physical_block_ids: list[int],
+        num_tokens: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Gather contiguous [1, num_kv_heads, num_tokens, head_dim] tensors for a sequence."""
+        if num_tokens <= 0 or not physical_block_ids:
+            empty = torch.empty(
+                (1, self.num_kv_heads, 0, self.head_dim),
+                device=self.device,
+                dtype=self.dtype,
+            )
+            return empty, empty
+
+        num_blocks_needed = (num_tokens + self.block_size - 1) // self.block_size
+        needed_block_ids = physical_block_ids[:num_blocks_needed]
+
+        # Extract blocks: [num_blocks_needed, num_kv_heads, block_size, head_dim]
+        k_blocks = self.key_caches[layer_idx][needed_block_ids]
+        v_blocks = self.value_caches[layer_idx][needed_block_ids]
+
+        # Reshape to [num_kv_heads, total_slots, head_dim]
+        n_b = len(needed_block_ids)
+        k_contig = k_blocks.permute(1, 0, 2, 3).reshape(self.num_kv_heads, n_b * self.block_size, self.head_dim)
+        v_contig = v_blocks.permute(1, 0, 2, 3).reshape(self.num_kv_heads, n_b * self.block_size, self.head_dim)
+
+        # Slice to exact num_tokens and unsqueeze batch dimension: [1, num_kv_heads, num_tokens, head_dim]
+        k_out = k_contig[:, :num_tokens, :].unsqueeze(0)
+        v_out = v_contig[:, :num_tokens, :].unsqueeze(0)
+        return k_out, v_out
+
+    def gather_batched_paged_kv(
+        self,
+        layer_idx: int,
+        block_tables: list[list[int]],
+        context_lens: list[int],
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Gather KV tensors and attention mask for a batch of sequences.
+
+        Returns:
+            k_batch: [B, num_kv_heads, max_len, head_dim]
+            v_batch: [B, num_kv_heads, max_len, head_dim]
+            mask: [B, 1, 1, max_len] (bool mask where True indicates valid token)
+        """
+        B = len(block_tables)
+        max_len = max(context_lens) if context_lens else 1
+
+        k_batch = torch.zeros(
+            (B, self.num_kv_heads, max_len, self.head_dim),
+            device=self.device,
+            dtype=self.dtype,
+        )
+        v_batch = torch.zeros(
+            (B, self.num_kv_heads, max_len, self.head_dim),
+            device=self.device,
+            dtype=self.dtype,
+        )
+        mask = torch.zeros((B, 1, 1, max_len), device=self.device, dtype=torch.bool)
+
+        for i in range(B):
+            n_tok = context_lens[i]
+            b_ids = block_tables[i]
+            if n_tok > 0 and b_ids:
+                k_seq, v_seq = self.read_sequence_kv(layer_idx, b_ids, n_tok)
+                k_batch[i, :, :n_tok, :] = k_seq[0]
+                v_batch[i, :, :n_tok, :] = v_seq[0]
+                mask[i, 0, 0, :n_tok] = True
+
+        return k_batch, v_batch, mask
+
 
 class BlockTable:
     """Logical-to-physical block mapping for an active request sequence."""

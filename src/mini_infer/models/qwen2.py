@@ -119,6 +119,10 @@ class Qwen2Attention(nn.Module):
         position_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+        block_pool: nn.Module | None = None,
+        block_tables: list[list[int]] | None = None,
+        context_lens: list[int] | None = None,
+        slot_mapping: list[tuple[int, int]] | None = None,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         batch_size, seq_len, _ = hidden_states.shape
 
@@ -133,13 +137,32 @@ class Qwen2Attention(nn.Module):
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        # Standard contiguous KV cache handling for single-stream / testing
-        if kv_cache is not None:
-            prev_k, prev_v = kv_cache
-            key_states = torch.cat([prev_k, key_states], dim=2)
-            value_states = torch.cat([prev_v, value_states], dim=2)
+        if block_pool is not None and block_tables is not None and context_lens is not None:
+            # 1. Write newly computed KV token states into allocated block slots
+            if slot_mapping is not None:
+                for b_idx in range(batch_size):
+                    block_id, slot_offset = slot_mapping[b_idx]
+                    block_pool.write_slot(
+                        self.layer_idx,
+                        block_id,
+                        slot_offset,
+                        key_states[b_idx, :, -1, :],
+                        value_states[b_idx, :, -1, :],
+                    )
 
-        new_kv_cache = (key_states, value_states)
+            # 2. Gather full paged KV history across all active sequences
+            key_states, value_states, attention_mask = block_pool.gather_batched_paged_kv(
+                self.layer_idx, block_tables, context_lens
+            )
+            new_kv_cache = None
+        else:
+            # Standard contiguous KV cache handling for single-stream / testing
+            if kv_cache is not None:
+                prev_k, prev_v = kv_cache
+                key_states = torch.cat([prev_k, key_states], dim=2)
+                value_states = torch.cat([prev_v, value_states], dim=2)
+
+            new_kv_cache = (key_states, value_states)
 
         # Repeat KV heads for GQA
         key_states = repeat_kv(key_states, self.num_key_value_groups)
@@ -181,6 +204,10 @@ class Qwen2DecoderLayer(nn.Module):
         position_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         kv_cache: tuple[torch.Tensor, torch.Tensor] | None = None,
+        block_pool: nn.Module | None = None,
+        block_tables: list[list[int]] | None = None,
+        context_lens: list[int] | None = None,
+        slot_mapping: list[tuple[int, int]] | None = None,
     ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor] | None]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -189,6 +216,10 @@ class Qwen2DecoderLayer(nn.Module):
             position_ids=position_ids,
             attention_mask=attention_mask,
             kv_cache=kv_cache,
+            block_pool=block_pool,
+            block_tables=block_tables,
+            context_lens=context_lens,
+            slot_mapping=slot_mapping,
         )
         hidden_states = residual + hidden_states
 
@@ -216,23 +247,34 @@ class Qwen2Model(nn.Module):
         position_ids: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         past_key_values: list | None = None,
-    ) -> tuple[torch.Tensor, list]:
+        block_pool: nn.Module | None = None,
+        block_tables: list[list[int]] | None = None,
+        context_lens: list[int] | None = None,
+        slot_mapping: list[tuple[int, int]] | None = None,
+    ) -> tuple[torch.Tensor, list | None]:
         batch_size, seq_len = input_ids.shape
 
         if position_ids is None:
-            past_len = past_key_values[0][0].shape[2] if past_key_values is not None else 0
-            position_ids = torch.arange(past_len, past_len + seq_len, dtype=torch.long, device=input_ids.device)
-            position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
+            if context_lens is not None and len(context_lens) == batch_size:
+                position_ids = torch.tensor(
+                    [[context_lens[i] - 1] for i in range(batch_size)],
+                    dtype=torch.long,
+                    device=input_ids.device,
+                )
+            else:
+                past_len = past_key_values[0][0].shape[2] if past_key_values is not None else 0
+                position_ids = torch.arange(past_len, past_len + seq_len, dtype=torch.long, device=input_ids.device)
+                position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
 
         hidden_states = self.embed_tokens(input_ids)
 
         # Causal mask for prefill
-        if attention_mask is None and seq_len > 1:
+        if attention_mask is None and seq_len > 1 and block_pool is None:
             total_len = position_ids.max().item() + 1
             mask = torch.ones((seq_len, total_len), device=input_ids.device, dtype=torch.bool).tril(diagonal=total_len - seq_len)
             attention_mask = mask[None, None, :, :]
 
-        new_past_key_values = []
+        new_past_key_values = [] if past_key_values is not None or block_pool is None else None
         for i, layer in enumerate(self.layers):
             layer_cache = past_key_values[i] if past_key_values is not None else None
             hidden_states, new_cache = layer(
@@ -240,8 +282,13 @@ class Qwen2Model(nn.Module):
                 position_ids=position_ids,
                 attention_mask=attention_mask,
                 kv_cache=layer_cache,
+                block_pool=block_pool,
+                block_tables=block_tables,
+                context_lens=context_lens,
+                slot_mapping=slot_mapping,
             )
-            new_past_key_values.append(new_cache)
+            if new_past_key_values is not None:
+                new_past_key_values.append(new_cache)
 
         hidden_states = self.norm(hidden_states)
         return hidden_states, new_past_key_values
@@ -265,12 +312,20 @@ class Qwen2ForCausalLM(nn.Module):
         position_ids: torch.Tensor | None = None,
         attention_mask: torch.Tensor | None = None,
         past_key_values: list | None = None,
-    ) -> tuple[torch.Tensor, list]:
+        block_pool: nn.Module | None = None,
+        block_tables: list[list[int]] | None = None,
+        context_lens: list[int] | None = None,
+        slot_mapping: list[tuple[int, int]] | None = None,
+    ) -> tuple[torch.Tensor, list | None]:
         hidden_states, new_past_key_values = self.model(
             input_ids=input_ids,
             position_ids=position_ids,
             attention_mask=attention_mask,
             past_key_values=past_key_values,
+            block_pool=block_pool,
+            block_tables=block_tables,
+            context_lens=context_lens,
+            slot_mapping=slot_mapping,
         )
         logits = self.lm_head(hidden_states)
         return logits, new_past_key_values

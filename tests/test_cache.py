@@ -83,3 +83,48 @@ def test_block_table_growth_and_free():
     assert pool.num_free == 10
     assert len(table.physical_block_ids) == 0
     assert table.num_tokens == 0
+
+
+def test_block_pool_paged_read_write():
+    pool = BlockPool(
+        num_blocks=4,
+        block_size=16,
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+    )
+    b0 = pool.allocate_block()
+    b1 = pool.allocate_block()
+
+    # Write single slot
+    k_vec = torch.randn(2, 8)
+    v_vec = torch.randn(2, 8)
+    pool.write_slot(layer_idx=0, block_id=b0, slot_offset=0, k_slot=k_vec, v_slot=v_vec)
+
+    # Read back single token
+    k_read, v_read = pool.read_sequence_kv(layer_idx=0, physical_block_ids=[b0], num_tokens=1)
+    assert k_read.shape == (1, 2, 1, 8)
+    assert torch.allclose(k_read[0, :, 0, :], k_vec)
+    assert torch.allclose(v_read[0, :, 0, :], v_vec)
+
+    # Test gather_batched_paged_kv for 2 sequences of different lengths
+    k_vec2 = torch.randn(2, 8)
+    v_vec2 = torch.randn(2, 8)
+    pool.write_slot(layer_idx=0, block_id=b1, slot_offset=0, k_slot=k_vec2, v_slot=v_vec2)
+    pool.write_slot(layer_idx=0, block_id=b1, slot_offset=1, k_slot=k_vec2, v_slot=v_vec2)
+
+    block_tables = [[b0], [b1]]
+    context_lens = [1, 2]
+    k_batch, v_batch, mask = pool.gather_batched_paged_kv(
+        layer_idx=0, block_tables=block_tables, context_lens=context_lens
+    )
+
+    assert k_batch.shape == (2, 2, 2, 8)
+    assert mask.shape == (2, 1, 1, 2)
+    assert mask[0, 0, 0, 0].item() is True
+    assert mask[0, 0, 0, 1].item() is False  # padded token masked out!
+    assert mask[1, 0, 0, 0].item() is True
+    assert mask[1, 0, 0, 1].item() is True
+
