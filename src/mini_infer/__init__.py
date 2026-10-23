@@ -5,6 +5,6 @@ from mini_infer.models.config import Qwen2Config
 from mini_infer.models.qwen2 import Qwen2ForCausalLM
 from mini_infer.repomap import build_repo_map
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 __all__ = ["InferenceEngine", "Qwen2Config", "Qwen2ForCausalLM", "build_repo_map"]
