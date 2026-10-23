@@ -1,6 +1,7 @@
 # mini-infer 🚀
 
 [![PyPI version](https://img.shields.io/pypi/v/mini-infer.svg?cacheSeconds=300)](https://pypi.org/project/mini-infer/)
+[![Sigstore Provenance](https://img.shields.io/badge/Sigstore-Provenance_Verified-success)](https://pypi.org/project/mini-infer/#security)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-teal.svg)](https://prajwal7-2002.github.io/mini-infer/)
 [![CI](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml/badge.svg)](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)

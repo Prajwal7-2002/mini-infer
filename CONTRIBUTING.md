@@ -59,15 +59,29 @@ uv run mkdocs build --strict
 
 ---
 
-## 🎯 High-Value Contribution Areas
+## 🎯 Where We Need Help (Areas for Contribution)
 
-We actively welcome contributions in the following domains:
+We actively welcome contributions in the following areas:
 
-* **New Model Architectures**: Implementing self-contained, native `.safetensors` weight loaders for architectures like Llama-3, Gemma-2, or Mistral.
-* **Quantization & Cache Compression**: Adding native FP8 KV-cache formats or int4 activation scales.
-* **Apple Silicon & AMD Support**: Validating and tuning performance on Apple MPS and AMD ROCm backends.
-* **Optional Accelerated Kernels**: Providing drop-in, optional Triton kernels for PagedAttention while maintaining the pure PyTorch fallback path.
-* **Scheduler Policies**: Implementing dynamic priority scheduling, Fair-Share batching, or deadline-aware chunked prefill.
+### 1. New Model Architectures (`src/mini_infer/models/loader.py`)
+Expand native zero-dependency Safetensors loaders:
+- [ ] **Llama-3.2 (1B & 3B)**: Native weight mapping for Meta's GQA edge models with RMSNorm and RoPE.
+- [ ] **SmolLM2 (135M / 360M / 1.7B)**: Compact local models for low-VRAM edge devices and CPU execution.
+- [ ] **Gemma-2 (2B)**: Support for Gemma-style sliding-window local/global attention patterns.
+
+### 2. Advanced Sampling & Generation (`src/mini_infer/engine.py`)
+- [ ] **Min-P Sampling**: Dynamic probability thresholding that scales based on the top token's confidence.
+- [ ] **Repetition & Frequency Penalty**: Modifying logits before softmax to prevent generation loops.
+- [ ] **JSON / Regex Masking**: Constrain sampling to valid JSON schemas matching Pydantic definitions.
+
+### 3. KV-Cache Innovations (`src/mini_infer/cache.py`)
+- [ ] **FP8 KV-Cache (E4M3 / E5M2)**: Native FP8 quantized storage for NVIDIA Ada/Hopper architectures.
+- [ ] **StreamingLLM / Attention Sinks**: Keep 4 initial tokens pinned + sliding window of recent tokens for infinite generation without OOM.
+
+### 4. Cross-Platform Acceleration & Tooling
+- [ ] **Apple Silicon (MPS)**: Benchmarking and optimizing PagedAttention gather operations on Mac Metal.
+- [ ] **Optional Triton Kernels**: Drop-in fused attention kernel with automatic pure-PyTorch fallback.
+- [ ] **IDE & Agent Extensions**: Verified configuration recipes and benchmark suites for Aider, Continue, and Cursor.
 
 ---
 
