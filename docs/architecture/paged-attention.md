@@ -56,20 +56,20 @@ With a block size of $B = 16$ tokens:
 
 ---
 
-## Python Implementation: Physical Block Manager
+## Python Implementation: Physical Block Pool & Batched Paging (v0.2.0)
 
-In mini-infer (`src/mini_infer/cache/memory_manager.py`), the physical pool is tracked using a fast stack of free block IDs:
+In mini-infer (`src/mini_infer/cache/block_pool.py`), the physical pool is pre-allocated as a single tensor in GPU VRAM and tracked using a fast stack of free block indices:
 
 ```python
-class KVCacheManager:
+class BlockPool:
     def __init__(self, num_blocks: int, block_size: int = 16, num_layers: int = 24, num_kv_heads: int = 2, head_dim: int = 64, device: str = "cuda"):
         self.block_size = block_size
         self.free_blocks = list(range(num_blocks))
         
         # Pre-allocated continuous VRAM tensor: [num_blocks, 2 (K/V), num_layers, num_kv_heads, block_size, head_dim]
-        self.gpu_pool = torch.zeros(
+        self.pool = torch.zeros(
             (num_blocks, 2, num_layers, num_kv_heads, block_size, head_dim),
-            dtype=torch.float16,
+            dtype=torch.bfloat16,
             device=device
         )
 
@@ -82,4 +82,16 @@ class KVCacheManager:
         self.free_blocks.append(block_id)
 ```
 
-During attention computation, keys and values are gathered dynamically using block table indices, avoiding expensive memory copies.
+### Zero-Copy Batched Attention Gather
+In `v0.2.0`, `gather_batched_paged_kv()` gathers past key and value tokens directly from physical memory blocks across all concurrent active decode sequences into a contiguous batch:
+
+```python
+# Gathers physical blocks for all active sequences into a unified tensor [B, total_past_len, H, D]
+k_all, v_all, mask = block_pool.gather_batched_paged_kv(
+    layer_idx=layer_idx,
+    block_tables=block_tables,   # List[List[int]] for each sequence
+    context_lens=context_lens,   # Sequence lengths
+    device=device
+)
+```
+This zero-copy gather eliminates redundant DRAM weight transfers and drives continuous batching throughput.

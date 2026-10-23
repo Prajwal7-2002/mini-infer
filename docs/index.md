@@ -64,6 +64,9 @@ Most practitioners know how to *call* an inference engine (`ollama run` or `vllm
 | Component | Industry Baseline | mini-infer Implementation |
 |---|---|---|
 | **Memory Allocation** | Static pre-allocated contiguous tensors (60–80% VRAM waste) | **PagedAttention Block Pool**: 16 tokens/block with virtual block tables (< 4% memory waste) |
+| **Batched Paged Decode (v0.2.0)** | Serial loop per sequence or custom CUDA kernel | **Unified `[B, 1]` Paged Forward Pass**: Direct physical tensor gather with zero-overhead slot mapping |
+| **Prompt Ingestion (v0.2.0)** | Unbounded monolithic prefill starving decode streams | **Chunked Prefill**: Bounded 512-token chunks interleaving prompt ingestion with active decodes |
+| **OOM Resilience (v0.2.0)** | Unhandled `CUDA out of memory` process crashes | **Graceful Preemption**: Re-queues lowest-priority sequences back to `WAITING` when pool exhausts |
 | **Prompt Caching** | Recomputing $O(N^2)$ attention on identical system prompts | **Radix Tree Prefix Cache**: Zero recompute on shared conversation prefixes |
 | **Batching Strategy** | Naive request batching (waiting for slowest request to finish) | **Continuous Iteration Batching**: Dynamic token-level scheduling |
 | **Generation Speed** | Sequential auto-regressive generation ($1$ token per step) | **Speculative Decoding**: $K$-token draft proposals with parallel target verification |

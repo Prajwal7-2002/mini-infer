@@ -43,10 +43,23 @@ By co-scheduling requests in decode phase with an active prefill chunk, mini-inf
 
 ---
 
-## Starvation Prevention
+## Starvation Prevention: Chunked Prefill (v0.2.0)
 
-If a single request submits an enormous prompt (e.g., a 10,000-token PDF), naive engines block all existing decode streams for several seconds, causing massive latency spikes (Inter-Token Latency degradation).
+If a single request submits an enormous prompt (e.g., a 10,000-token prompt), naive engines block all existing decode streams for several seconds, causing massive latency spikes (Inter-Token Latency degradation).
 
-mini-infer guards against starvation via:
-- **Maximum Batch Token Budget**: Enforces an upper bound on total tokens evaluated in a single forward pass.
-- **Fair-Share Scheduler**: Prioritizes inflight decode streams with tight latency SLOs before admitting new heavy prefill requests.
+mini-infer `v0.2.0` solves this with **Chunked Prefill**:
+- **Chunked Slicing**: Prompts are sliced into chunks of `chunked_prefill_size=512`.
+- **Interleaving**: The scheduler ingests at most one 512-token chunk per step, interleaving prompt processing with active decode steps.
+- **Bounded ITL**: Time-to-First-Token for the new request proceeds smoothly while active decode streams maintain uninterrupted, steady token emission.
+
+---
+
+## Memory Pressure Preemption (v0.2.0)
+
+During burst traffic spikes, requests may demand more physical blocks than available in `BlockPool`. Without protection, this causes hard `CUDA out of memory` or `MemoryError` crashes.
+
+In `mini-infer v0.2.0`, the continuous scheduler implements graceful **Preemption Recovery**:
+1. When `block_pool.can_allocate()` fails for active decodes or prefills, the scheduler selects the lowest-priority (most recently scheduled) active sequence.
+2. The sequence is suspended and re-queued to the `WAITING` state, and its physical blocks are freed back to the pool.
+3. In-flight high-priority sequences continue uninterrupted to completion.
+4. Once blocks are freed by retiring finished sequences, the preempted sequence is re-scheduled and resumed automatically.
