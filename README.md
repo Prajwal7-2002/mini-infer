@@ -226,12 +226,31 @@ Because `mini-infer serve` exposes standard OpenAI endpoints (`http://127.0.0.1:
 2. **Connect**:
    * **Cursor**: Set OpenAI Base URL to `http://127.0.0.1:8000/v1`, API Key to `dummy`, and model to `Qwen/Qwen2.5-Coder-1.5B-Instruct`.
    * **VS Code (Continue)**: Set provider to `openai`, apiBase to `http://127.0.0.1:8000/v1`.
-   * **Aider (Terminal Pair Programmer)**:
-     ```bash
+   * **Aider (Autonomous Terminal Pair Programmer)**:
+     ```powershell
+     # Windows (PowerShell):
+     $env:OPENAI_API_BASE = "http://127.0.0.1:8000/v1"
+     $env:OPENAI_API_KEY = "dummy"
+     aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
+
+     # Linux / macOS (bash/zsh):
      export OPENAI_API_BASE=http://127.0.0.1:8000/v1
      export OPENAI_API_KEY=dummy
      aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
      ```
+
+### 💡 Zero-File-Selection Prompting (Direct Natural Language)
+You do **not** need to manually copy-paste file contents or type `@filename.py`:
+* **In `mini-infer chat -c ./src`**: Because `-c` injects the whole AST skeleton, just type:
+  `> Add a GET /metrics endpoint returning server uptime`
+  The engine locates `api/app.py` from the AST and writes the code automatically!
+* **In Aider**: Aider reads the repo-map automatically. Just type:
+  `> Add a /metrics endpoint returning server uptime`
+  Aider identifies `api/app.py`, edits the file on disk, and creates a git commit.
+* **In VS Code (Continue)**: Use `@Codebase` instead of individual files:
+  `@Codebase Add a /metrics endpoint returning server uptime`
+
+---
 
 ### Why This Works on a Laptop GPU:
 * **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.

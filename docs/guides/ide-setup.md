@@ -47,31 +47,60 @@ Any tool that works with OpenAI, vLLM, or Ollama works with `mini-infer`.
 
 ---
 
-## 3. Aider (Terminal Pair Programming)
+## 3. Aider (Autonomous Terminal Pair Programmer)
 
-[Aider](https://aider.chat/) is an autonomous terminal-based AI pair programmer.
+[Aider](https://aider.chat/) is an AI pair programmer in your terminal that automatically edits files and creates git commits for you.
 
-Run Aider pointing to your local `mini-infer` server:
+### Launch Aider:
 
-```bash
-# Set environment variables
-export OPENAI_API_BASE=http://127.0.0.1:8000/v1
-export OPENAI_API_KEY=dummy
-
-# Launch Aider
-aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
-```
-
-On Windows PowerShell:
+**On Windows (PowerShell):**
 ```powershell
 $env:OPENAI_API_BASE = "http://127.0.0.1:8000/v1"
 $env:OPENAI_API_KEY = "dummy"
 aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
 ```
 
+**On Linux / macOS (bash/zsh):**
+```bash
+export OPENAI_API_BASE=http://127.0.0.1:8000/v1
+export OPENAI_API_KEY=dummy
+aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
+```
+
 ---
 
-## 4. Python OpenAI Client
+## 4. Zero-File-Selection Prompting (Direct Instructions)
+
+Developers often ask: *"How do I prompt without selecting/pasting files or typing `@filename` every time?"*
+
+Here is how each tool handles zero-file selection:
+
+### A. In Aider (Autonomous Codebase Navigation)
+You do **not** need to type `/add src/api/app.py`. Aider automatically reads the repository map:
+1. Simply type your goal in natural language:
+   ```text
+   > Add a GET /metrics endpoint that returns server uptime and memory stats
+   ```
+2. Aider scans the AST repo map, recognizes that endpoints belong in `src/api/app.py`, asks `Add src/api/app.py to the chat? (Y/n)`, applies the change directly to disk, and commits it.
+
+### B. In `mini-infer chat -c ./src` (Zero Configuration)
+Because you passed `-c ./src`, the entire architectural skeleton is already resident in the model's KV-cache:
+1. Type your prompt:
+   ```text
+   User: Add a new metrics endpoint returning uptime and GPU memory stats.
+   ```
+2. The model immediately knows where endpoints are defined, crafts the exact code matching your codebase style, and thanks to **Radix Prefix Caching**, follow-ups respond in **< 0.8s**!
+
+### C. In VS Code Continue (`@Codebase`)
+Instead of typing `@app.py`, use the `@Codebase` context provider in the Continue sidebar:
+```text
+@Codebase Add a /metrics endpoint returning server uptime. Follow existing FastAPI conventions.
+```
+Continue will automatically retrieve the relevant files across your entire repository.
+
+---
+
+## 5. Python OpenAI Client
 
 ```python
 from openai import OpenAI
@@ -98,7 +127,7 @@ print()
 
 ---
 
-## 5. Terminal `curl` Streaming
+## 6. Terminal `curl` Streaming
 
 ```bash
 curl -N http://127.0.0.1:8000/v1/chat/completions \
