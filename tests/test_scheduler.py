@@ -136,4 +136,3 @@ def test_scheduler_preemption():
     assert scheduler.waiting[0].request_id == "S2"
     assert pool.num_free == 2  # S2's blocks freed back to pool
     assert scheduler.preempted_count == 1
-

@@ -42,11 +42,19 @@ class BlockPool:
         # If kv_cache_dtype == "int8", store in int8 (1 byte) with per-token scale factors
         if self.kv_cache_dtype == "int8":
             self.key_caches: list[torch.Tensor] = [
-                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=torch.int8)
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim),
+                    device=device,
+                    dtype=torch.int8,
+                )
                 for _ in range(num_layers)
             ]
             self.value_caches: list[torch.Tensor] = [
-                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=torch.int8)
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim),
+                    device=device,
+                    dtype=torch.int8,
+                )
                 for _ in range(num_layers)
             ]
             self.key_scales: list[torch.Tensor] = [
@@ -59,11 +67,15 @@ class BlockPool:
             ]
         else:
             self.key_caches: list[torch.Tensor] = [
-                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype
+                )
                 for _ in range(num_layers)
             ]
             self.value_caches: list[torch.Tensor] = [
-                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype
+                )
                 for _ in range(num_layers)
             ]
             self.key_scales = None
@@ -198,8 +210,12 @@ class BlockPool:
 
         # Reshape to [num_kv_heads, total_slots, head_dim]
         n_b = len(needed_block_ids)
-        k_contig = k_blocks.permute(1, 0, 2, 3).reshape(self.num_kv_heads, n_b * self.block_size, self.head_dim)
-        v_contig = v_blocks.permute(1, 0, 2, 3).reshape(self.num_kv_heads, n_b * self.block_size, self.head_dim)
+        k_contig = k_blocks.permute(1, 0, 2, 3).reshape(
+            self.num_kv_heads, n_b * self.block_size, self.head_dim
+        )
+        v_contig = v_blocks.permute(1, 0, 2, 3).reshape(
+            self.num_kv_heads, n_b * self.block_size, self.head_dim
+        )
 
         # Slice to exact num_tokens and unsqueeze batch dimension: [1, num_kv_heads, num_tokens, head_dim]
         k_out = k_contig[:, :num_tokens, :].unsqueeze(0)

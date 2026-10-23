@@ -18,9 +18,7 @@ class PrefixCache:
         # Tracks last access time for LRU eviction: physical_block_id -> timestamp
         self.last_accessed: dict[int, float] = {}
 
-    def match_prefix(
-        self, token_ids: list[int], block_pool: BlockPool
-    ) -> tuple[list[int], int]:
+    def match_prefix(self, token_ids: list[int], block_pool: BlockPool) -> tuple[list[int], int]:
         """Find the longest cached block sequence that matches the start of token_ids.
 
         Args:

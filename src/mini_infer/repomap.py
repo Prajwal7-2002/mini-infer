@@ -38,7 +38,9 @@ def _format_arg(arg: ast.arg) -> str:
     return arg.arg
 
 
-def _format_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool = False) -> str:
+def _format_function_signature(
+    node: ast.FunctionDef | ast.AsyncFunctionDef, is_method: bool = False
+) -> str:
     """Format function name, typed arguments, and return annotation."""
     prefix = "async def " if isinstance(node, ast.AsyncFunctionDef) else "def "
     args_list: list[str] = []
@@ -93,7 +95,9 @@ def _format_function_signature(node: ast.FunctionDef | ast.AsyncFunctionDef, is_
     return sig
 
 
-def extract_file_skeleton(file_path: Path | str, include_docstrings: bool = True, include_private: bool = False) -> str:
+def extract_file_skeleton(
+    file_path: Path | str, include_docstrings: bool = True, include_private: bool = False
+) -> str:
     """Parse a Python source file and extract classes, methods, and function signatures.
 
     Args:
@@ -143,7 +147,11 @@ def extract_file_skeleton(file_path: Path | str, include_docstrings: bool = True
             method_found = False
             for item in node.body:
                 if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if not include_private and item.name.startswith("_") and not item.name.startswith("__"):
+                    if (
+                        not include_private
+                        and item.name.startswith("_")
+                        and not item.name.startswith("__")
+                    ):
                         continue
                     method_sig = _format_function_signature(item, is_method=True)
                     lines.append(f"    {method_sig}: ...")
@@ -207,7 +215,9 @@ def build_repo_map(
     file_skeletons: list[tuple[str, str]] = []
     for f in all_files:
         rel_path = f.relative_to(root).as_posix()
-        skeleton = extract_file_skeleton(f, include_docstrings=include_docstrings, include_private=include_private)
+        skeleton = extract_file_skeleton(
+            f, include_docstrings=include_docstrings, include_private=include_private
+        )
         if skeleton:
             file_skeletons.append((rel_path, skeleton))
 
@@ -224,7 +234,10 @@ def build_repo_map(
 
     # Second pass: strip docstrings if exceeding budget
     file_skeletons = [
-        (rel_path, extract_file_skeleton(root / rel_path, include_docstrings=False, include_private=False))
+        (
+            rel_path,
+            extract_file_skeleton(root / rel_path, include_docstrings=False, include_private=False),
+        )
         for rel_path, _ in file_skeletons
     ]
     output = render_output(file_skeletons)

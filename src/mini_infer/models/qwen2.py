@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -31,12 +30,18 @@ class Qwen2RotaryEmbedding(nn.Module):
         self.max_position_embeddings = max_position_embeddings
         self.base = base
 
-        inv_freq = 1.0 / (self.base ** (torch.arange(0, self.dim, 2, dtype=torch.float32) / self.dim))
+        inv_freq = 1.0 / (
+            self.base ** (torch.arange(0, self.dim, 2, dtype=torch.float32) / self.dim)
+        )
         self.register_buffer("inv_freq", inv_freq, persistent=False)
 
-    def forward(self, x: torch.Tensor, position_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor, position_ids: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # position_ids: [batch_size, seq_len]
-        inv_freq_expanded = self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        inv_freq_expanded = (
+            self.inv_freq[None, :, None].float().expand(position_ids.shape[0], -1, 1)
+        )
         position_ids_expanded = position_ids[:, None, :].float()
 
         # [batch_size, dim // 2, seq_len] -> [batch_size, seq_len, dim // 2]
@@ -54,7 +59,9 @@ def rotate_half(x: torch.Tensor) -> torch.Tensor:
     return torch.cat((-x2, x1), dim=-1)
 
 
-def apply_rotary_pos_emb(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def apply_rotary_pos_emb(
+    q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Applies RoPE to query and key states."""
     # cos, sin shape: [batch_size, seq_len, dim] -> unsqueeze head dim: [batch_size, 1, seq_len, dim]
     cos = cos.unsqueeze(1)
@@ -72,7 +79,9 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     if n_rep == 1:
         return hidden_states
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, None, :, :].expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim
+    )
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
 
 
@@ -103,8 +112,12 @@ class Qwen2Attention(nn.Module):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
 
         self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=True)
-        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
-        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True)
+        self.k_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True
+        )
+        self.v_proj = nn.Linear(
+            self.hidden_size, self.num_key_value_heads * self.head_dim, bias=True
+        )
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
         self.rotary_emb = Qwen2RotaryEmbedding(
@@ -130,9 +143,15 @@ class Qwen2Attention(nn.Module):
         key_states = self.k_proj(hidden_states)
         value_states = self.v_proj(hidden_states)
 
-        query_states = query_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
-        key_states = key_states.view(batch_size, seq_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-        value_states = value_states.view(batch_size, seq_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        query_states = query_states.view(
+            batch_size, seq_len, self.num_heads, self.head_dim
+        ).transpose(1, 2)
+        key_states = key_states.view(
+            batch_size, seq_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
+        value_states = value_states.view(
+            batch_size, seq_len, self.num_key_value_heads, self.head_dim
+        ).transpose(1, 2)
 
         cos, sin = self.rotary_emb(value_states, position_ids)
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
@@ -169,7 +188,11 @@ class Qwen2Attention(nn.Module):
         value_states = repeat_kv(value_states, self.num_key_value_groups)
 
         # Scaled dot product attention (hardware-accelerated SDPA with numerical stability)
-        if attention_mask is not None and attention_mask.dtype != query_states.dtype and attention_mask.dtype != torch.bool:
+        if (
+            attention_mask is not None
+            and attention_mask.dtype != query_states.dtype
+            and attention_mask.dtype != torch.bool
+        ):
             attention_mask = attention_mask.to(query_states.dtype)
 
         attn_output = F.scaled_dot_product_attention(
@@ -238,7 +261,9 @@ class Qwen2Model(nn.Module):
         super().__init__()
         self.config = config
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size)
-        self.layers = nn.ModuleList([Qwen2DecoderLayer(config, i) for i in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList(
+            [Qwen2DecoderLayer(config, i) for i in range(config.num_hidden_layers)]
+        )
         self.norm = Qwen2RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
@@ -263,7 +288,9 @@ class Qwen2Model(nn.Module):
                 )
             else:
                 past_len = past_key_values[0][0].shape[2] if past_key_values is not None else 0
-                position_ids = torch.arange(past_len, past_len + seq_len, dtype=torch.long, device=input_ids.device)
+                position_ids = torch.arange(
+                    past_len, past_len + seq_len, dtype=torch.long, device=input_ids.device
+                )
                 position_ids = position_ids.unsqueeze(0).expand(batch_size, -1)
 
         hidden_states = self.embed_tokens(input_ids)
@@ -271,7 +298,9 @@ class Qwen2Model(nn.Module):
         # Causal mask for prefill
         if attention_mask is None and seq_len > 1 and block_pool is None:
             total_len = position_ids.max().item() + 1
-            mask = torch.ones((seq_len, total_len), device=input_ids.device, dtype=torch.bool).tril(diagonal=total_len - seq_len)
+            mask = torch.ones((seq_len, total_len), device=input_ids.device, dtype=torch.bool).tril(
+                diagonal=total_len - seq_len
+            )
             attention_mask = mask[None, None, :, :]
 
         new_past_key_values = [] if past_key_values is not None or block_pool is None else None

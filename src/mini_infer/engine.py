@@ -95,14 +95,16 @@ class InferenceEngine:
 
             # Prefix caching check on initial admission
             if seq.prompt_tokens_processed == 0 and self.prefix_cache:
-                cached_blocks, num_cached = self.prefix_cache.match_prefix(input_tokens, self.block_pool)
+                cached_blocks, num_cached = self.prefix_cache.match_prefix(
+                    input_tokens, self.block_pool
+                )
                 if num_cached > 0:
                     seq.block_table.physical_block_ids.extend(cached_blocks)
                     seq.block_table.num_tokens = num_cached
                     seq.prompt_tokens_processed = num_cached
 
             # Determine next slice of tokens to process
-            remaining_tokens = input_tokens[seq.prompt_tokens_processed:]
+            remaining_tokens = input_tokens[seq.prompt_tokens_processed :]
             if not remaining_tokens:
                 # Fully cached prompt
                 chunk_tokens = [input_tokens[-1]]
@@ -150,7 +152,9 @@ class InferenceEngine:
                     for b_idx in range(len(seq.block_table.physical_block_ids[:full_blocks_count])):
                         block_id = seq.block_table.physical_block_ids[b_idx]
                         prefix_chunk = tuple(input_tokens[: (b_idx + 1) * self.block_size])
-                        self.prefix_cache.insert_prefix_block(prefix_chunk, block_id, self.block_pool)
+                        self.prefix_cache.insert_prefix_block(
+                            prefix_chunk, block_id, self.block_pool
+                        )
 
         # 2. Handle Batched Decode Sequences (Single Unified Forward Pass)
         active_decodes = [s for s in decode_seqs if s.status != SequenceStatus.FINISHED]

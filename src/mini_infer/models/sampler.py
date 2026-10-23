@@ -54,7 +54,9 @@ def sample_next_token(
         sorted_indices_to_remove[..., 0] = 0
 
         # Scatter sorted tensors back to original indexing
-        indices_to_remove = sorted_indices_to_remove.scatter(1, sorted_indices, sorted_indices_to_remove)
+        indices_to_remove = sorted_indices_to_remove.scatter(
+            1, sorted_indices, sorted_indices_to_remove
+        )
         logits = logits.masked_fill(indices_to_remove, -float("Inf"))
 
     # 6. Categorical multinomial sampling

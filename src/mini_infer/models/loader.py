@@ -81,7 +81,12 @@ def load_model_from_safetensors(
         from huggingface_hub import snapshot_download
 
         print(f"Downloading model {model_dir_or_repo} from Hugging Face Hub...")
-        path = Path(snapshot_download(repo_id=str(model_dir_or_repo), allow_patterns=["*.safetensors", "config.json", "tokenizer*"]))
+        path = Path(
+            snapshot_download(
+                repo_id=str(model_dir_or_repo),
+                allow_patterns=["*.safetensors", "config.json", "tokenizer*"],
+            )
+        )
 
     # 1. Load config.json
     config_path = path / "config.json"
@@ -94,7 +99,9 @@ def load_model_from_safetensors(
     config = Qwen2Config.from_dict(config_dict)
 
     # 2. Instantiate model directly with target dtype on target device
-    print(f"Initializing Qwen2ForCausalLM ({config.num_hidden_layers} layers, hidden_size={config.hidden_size})...")
+    print(
+        f"Initializing Qwen2ForCausalLM ({config.num_hidden_layers} layers, hidden_size={config.hidden_size})..."
+    )
     orig_dtype = torch.get_default_dtype()
     torch.set_default_dtype(dtype)
     try:
@@ -107,7 +114,9 @@ def load_model_from_safetensors(
     if not safetensor_files:
         raise FileNotFoundError(f"No .safetensors files found in {path}")
 
-    print(f"Streaming weights from {len(safetensor_files)} safetensors file(s) into {device} ({dtype})...")
+    print(
+        f"Streaming weights from {len(safetensor_files)} safetensors file(s) into {device} ({dtype})..."
+    )
     for sf in safetensor_files:
         _load_safetensors_into_model(model, sf, target_dtype=dtype)
 

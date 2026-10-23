@@ -53,12 +53,16 @@ def test_build_repo_map_budget_and_filtering():
         root = Path(tmp_dir)
 
         # File 1 in main
-        (root / "main.py").write_text("class MainApp:\n    def start(self) -> None: pass\n", encoding="utf-8")
+        (root / "main.py").write_text(
+            "class MainApp:\n    def start(self) -> None: pass\n", encoding="utf-8"
+        )
 
         # File 2 in subfolder
         sub = root / "pkg"
         sub.mkdir()
-        (sub / "util.py").write_text("def helper(data: list[str]) -> int:\n    return len(data)\n", encoding="utf-8")
+        (sub / "util.py").write_text(
+            "def helper(data: list[str]) -> int:\n    return len(data)\n", encoding="utf-8"
+        )
 
         # Ignored folder
         ignored = root / ".venv" / "lib"

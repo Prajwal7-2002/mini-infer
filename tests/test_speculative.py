@@ -40,8 +40,24 @@ def test_speculative_greedy_identical_models():
 def test_speculative_rejection():
     """Verify that a rejected candidate token is corrected by the target model."""
     torch.manual_seed(42)
-    cfg_target = Qwen2Config(vocab_size=128, hidden_size=64, intermediate_size=128, num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2, head_dim=16)
-    cfg_draft = Qwen2Config(vocab_size=128, hidden_size=32, intermediate_size=64, num_hidden_layers=1, num_attention_heads=2, num_key_value_heads=1, head_dim=16)
+    cfg_target = Qwen2Config(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+    )
+    cfg_draft = Qwen2Config(
+        vocab_size=128,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=1,
+        num_attention_heads=2,
+        num_key_value_heads=1,
+        head_dim=16,
+    )
 
     target_model = Qwen2ForCausalLM(cfg_target)
     draft_model = Qwen2ForCausalLM(cfg_draft)

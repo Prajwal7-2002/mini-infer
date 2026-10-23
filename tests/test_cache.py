@@ -169,4 +169,3 @@ def test_block_pool_int8_quantization():
     assert k_batch.dtype == torch.float32
     assert k_batch.shape == (1, 2, 1, 8)
     assert mask[0, 0, 0, 0].item() is True
-

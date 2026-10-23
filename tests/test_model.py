@@ -30,7 +30,7 @@ def test_rmsnorm():
     out = norm(x)
     assert out.shape == (2, 10, 64)
     # Check that root mean square is close to 1
-    rms = torch.sqrt(torch.mean(out ** 2, dim=-1))
+    rms = torch.sqrt(torch.mean(out**2, dim=-1))
     assert torch.allclose(rms, torch.ones_like(rms), atol=1e-2)
 
 
