@@ -126,3 +126,7 @@ def info():
         console.print("  • Qwen2.5-0.5B (Draft Model):  ~1.0 GB VRAM")
         console.print("  • Paged KV-Cache Memory Pool:  ~1.5 GB VRAM (~2000 blocks)")
         console.print("  • Safety Buffer:               ~0.5 GB")
+
+
+if __name__ == "__main__":
+    app()
