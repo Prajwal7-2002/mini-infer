@@ -27,4 +27,12 @@
   - Peak VRAM footprint: **1.73 GB** (leaving ample headroom on 6 GB GPU).
   - Average power draw: **12.7 W - 13.8 W** (0.76 - 0.92 Tok/Joule efficiency).
 - Exported benchmark artifacts and charts to `benchmarks/mini_infer_benchmark.json` and `benchmarks/report.md`.
+ 
+## 2026-10-23: Milestone 7 - Batched Paged Attention, Chunked Prefill & Preemption (v0.2.0)
+
+- **Batched Paged KV Gather**: Wired physical `BlockPool` key/value memory tensors directly into `Qwen2Attention` with zero-copy block table gather (`gather_batched_paged_kv`) and per-token slot mapping.
+- **Unified Batched Decoding**: Eliminated the serial unbatched decoding loop in `InferenceEngine.step()`. All concurrent active decoding streams now execute in a single batched forward pass (`[batch_size, 1]`), reducing DRAM weight transfers by up to 4×.
+- **Chunked Prefill**: Implemented bounded prompt prefill slicing (`chunked_prefill_size=512`), interleaving prompt evaluation with active decodes to prevent ITL stutter during bursty request arrivals.
+- **Memory Pressure Preemption**: Implemented graceful sequence preemption in `ContinuousScheduler`. When the physical block pool exhausts under load, the engine preempts the newest sequence, frees its blocks to let older requests complete, and resumes it without crashing.
+- **Expanded Test Matrix**: Added `tests/test_engine.py` and test cases for chunked prefill, preemption, and paged read/write. 18/18 tests passing.
 

@@ -33,6 +33,7 @@ class Sequence:
         self.status = SequenceStatus.WAITING
         self.block_table = BlockTable(block_size=16)
         self.past_key_values = None
+        self.prompt_tokens_processed: int = 0
 
     @property
     def num_prompt_tokens(self) -> int:
@@ -45,6 +46,10 @@ class Sequence:
     @property
     def total_tokens(self) -> int:
         return self.num_prompt_tokens + self.num_output_tokens
+
+    @property
+    def is_prefill_complete(self) -> bool:
+        return self.num_output_tokens > 0 or self.prompt_tokens_processed >= self.num_prompt_tokens
 
     def append_token(self, token_id: int):
         """Append a newly generated token and check if the sequence should terminate."""
@@ -59,11 +64,11 @@ class Sequence:
 
 
 class ContinuousScheduler:
-    """Iteration-level scheduler implementing continuous batching.
+    """Iteration-level scheduler implementing continuous batching with chunked prefill and preemption.
 
     Instead of waiting for all requests in a batch to finish (static batching),
-    the scheduler checks for finished requests and admits new waiting requests
-    at every single decoding iteration step.
+    the scheduler checks for finished requests, admits new waiting requests,
+    and interleaves chunked prefills with active decoding streams.
     """
 
     def __init__(
@@ -71,13 +76,16 @@ class ContinuousScheduler:
         block_pool: BlockPool,
         max_batch_size: int = 8,
         max_num_batched_tokens: int = 2048,
+        chunked_prefill_size: int = 512,
     ):
         self.block_pool = block_pool
         self.max_batch_size = max_batch_size
         self.max_num_batched_tokens = max_num_batched_tokens
+        self.chunked_prefill_size = chunked_prefill_size
 
         self.waiting: list[Sequence] = []
         self.running: list[Sequence] = []
+        self.preempted_count: int = 0
 
     def add_sequence(self, sequence: Sequence):
         """Enqueue a new request."""
@@ -87,6 +95,17 @@ class ContinuousScheduler:
     def has_unfinished_sequences(self) -> bool:
         """Returns True if there are requests currently running or waiting."""
         return bool(self.waiting or self.running)
+
+    def preempt(self, sequence: Sequence) -> None:
+        """Preempt a running sequence under memory pressure to avoid OOM crash."""
+        if sequence in self.running:
+            self.running.remove(sequence)
+        sequence.free(self.block_pool)
+        sequence.prompt_tokens_processed = 0
+        sequence.output_token_ids.clear()
+        sequence.status = SequenceStatus.WAITING
+        self.waiting.insert(0, sequence)
+        self.preempted_count += 1
 
     def schedule(self) -> tuple[list[Sequence], list[Sequence]]:
         """Schedule sequences for the next iteration step.
@@ -107,21 +126,20 @@ class ContinuousScheduler:
         admitted: list[Sequence] = []
         while self.waiting and (len(self.running) + len(admitted)) < self.max_batch_size:
             candidate = self.waiting[0]
-            # Estimate blocks needed for prefill
-            blocks_needed = (candidate.num_prompt_tokens + 15) // 16
+            # Minimum blocks needed to start chunked prefill
+            blocks_needed = min(2, (candidate.num_prompt_tokens + 15) // 16)
             if self.block_pool.num_free < blocks_needed:
-                # GPU KV pool has no space right now; stop admitting until running sequences retire
+                # KV pool is full; stop admitting until older requests complete
                 break
 
             candidate = self.waiting.pop(0)
             candidate.status = SequenceStatus.RUNNING
             admitted.append(candidate)
 
-        # 3. Newly admitted sequences undergo prefill; existing running sequences undergo decode
-        prefill_seqs = admitted
-        decode_seqs = list(self.running)
-
-        # Add newly admitted sequences into running pool for future steps
         self.running.extend(admitted)
+
+        # 3. Separate sequences actively completing prefill vs decode
+        prefill_seqs = [s for s in self.running if not s.is_prefill_complete]
+        decode_seqs = [s for s in self.running if s.is_prefill_complete]
 
         return prefill_seqs, decode_seqs
