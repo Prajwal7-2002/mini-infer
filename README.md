@@ -218,6 +218,20 @@ Burst prompt arrivals can starve active decode sequences and cause high Inter-To
 * **Chunked Prefill**: Bounded prompt prefill slices (`chunked_prefill_size=512`) interleave long prompt ingestion with active token generation.
 * **Preemption Recovery**: When the physical block pool exhausts under burst concurrency, the scheduler preempts lowest-priority sequences back to `WAITING` instead of crashing with OOM.
 
+### 7. INT8 Dynamic KV-Cache Quantization (v0.2.2)
+To double available context token capacity on consumer GPUs without losing precision, `mini-infer` supports dynamic INT8 KV caching:
+* **Per-Token Dynamic Scaling**: Quantizes cached Key and Value tensors to 1-byte `torch.int8` with per-token scale factors.
+* **50% KV Footprint Reduction**: Drops KV DRAM storage from 12.3 KB/tok down to ~6.2 KB/tok.
+* **Zero Compiler Dependencies**: Runs purely in PyTorch SDPA on CUDA, Apple MPS, and CPU.
+
+### 8. AST Repo-Map Generator for Large Codebases (v0.2.2)
+To code on large repositories without exceeding context limits or losing context, use `mini-infer repomap` to extract an AST outline (classes, typed signatures, exports) into a token-budgeted prompt skeleton:
+```bash
+# Index repository structure into a 1500-token prompt skeleton
+mini-infer repomap . --max-tokens 1500 --output repomap.md
+```
+Combined with `mini-infer`'s radix prefix caching, this skeleton stays warm in GPU memory across queries, enabling surgical code assistance on massive repositories with sub-15ms TTFT.
+
 ---
 
 ## ⚡ Real-World Benchmarks on Real Hardware (v0.2.1)

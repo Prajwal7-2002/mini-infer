@@ -6,7 +6,11 @@ from mini_infer.models.qwen2 import Qwen2ForCausalLM
 from mini_infer.scheduler.continuous import SequenceStatus
 
 
-def create_toy_engine(max_batch_size: int = 4, chunked_prefill_size: int = 16) -> InferenceEngine:
+def create_toy_engine(
+    max_batch_size: int = 4,
+    chunked_prefill_size: int = 16,
+    kv_cache_dtype: str = "auto",
+) -> InferenceEngine:
     torch.manual_seed(42)
     cfg = Qwen2Config(
         vocab_size=128,
@@ -30,6 +34,7 @@ def create_toy_engine(max_batch_size: int = 4, chunked_prefill_size: int = 16) -
         chunked_prefill_size=chunked_prefill_size,
         enable_prefix_caching=True,
         device=torch.device("cpu"),
+        kv_cache_dtype=kv_cache_dtype,
     )
 
 
@@ -102,5 +107,21 @@ def test_engine_chunked_prefill():
     # Step 5: decode step 3 (finishes max_tokens=3)
     out5 = engine.step()
     assert len(out5) == 1
+    assert seq.status == SequenceStatus.FINISHED
+    assert len(seq.output_token_ids) == 3
+
+
+def test_engine_int8_kv_cache():
+    engine = create_toy_engine(max_batch_size=2, kv_cache_dtype="int8")
+    assert engine.block_pool.kv_cache_dtype == "int8"
+    assert engine.block_pool.key_caches[0].dtype == torch.int8
+
+    seq = engine.add_request(prompt_token_ids=[1, 2, 3, 4], max_tokens=3, request_id="int8-req")
+
+    step_count = 0
+    while engine.scheduler.has_unfinished_sequences() and step_count < 10:
+        engine.step()
+        step_count += 1
+
     assert seq.status == SequenceStatus.FINISHED
     assert len(seq.output_token_ids) == 3

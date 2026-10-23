@@ -17,6 +17,7 @@ class BlockPool:
         head_dim: int,
         device: torch.device | None = None,
         dtype: torch.dtype | None = None,
+        kv_cache_dtype: str = "auto",
     ):
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -29,6 +30,7 @@ class BlockPool:
         self.head_dim = head_dim
         self.device = device
         self.dtype = dtype
+        self.kv_cache_dtype = kv_cache_dtype.lower()
 
         # Free list of physical block indices
         self.free_list: list[int] = list(range(num_blocks))
@@ -37,15 +39,35 @@ class BlockPool:
         self.ref_counts: dict[int, int] = {i: 0 for i in range(num_blocks)}
 
         # Pre-allocate physical KV tensors per layer
-        # Shape per layer: [num_blocks, num_kv_heads, block_size, head_dim]
-        self.key_caches: list[torch.Tensor] = [
-            torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
-            for _ in range(num_layers)
-        ]
-        self.value_caches: list[torch.Tensor] = [
-            torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
-            for _ in range(num_layers)
-        ]
+        # If kv_cache_dtype == "int8", store in int8 (1 byte) with per-token scale factors
+        if self.kv_cache_dtype == "int8":
+            self.key_caches: list[torch.Tensor] = [
+                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=torch.int8)
+                for _ in range(num_layers)
+            ]
+            self.value_caches: list[torch.Tensor] = [
+                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=torch.int8)
+                for _ in range(num_layers)
+            ]
+            self.key_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+            self.value_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+        else:
+            self.key_caches: list[torch.Tensor] = [
+                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+            self.value_caches: list[torch.Tensor] = [
+                torch.zeros((num_blocks, num_kv_heads, block_size, head_dim), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+            self.key_scales = None
+            self.value_scales = None
 
     @property
     def num_free(self) -> int:
@@ -99,8 +121,19 @@ class BlockPool:
         if k_slot.dim() == 3:
             k_slot = k_slot.squeeze(0)
             v_slot = v_slot.squeeze(0)
-        self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_slot
-        self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_slot
+
+        if self.kv_cache_dtype == "int8":
+            k_scale = torch.clamp(k_slot.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
+            v_scale = torch.clamp(v_slot.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
+            k_q = torch.clamp(torch.round(k_slot / k_scale), -128, 127).to(torch.int8)
+            v_q = torch.clamp(torch.round(v_slot / v_scale), -128, 127).to(torch.int8)
+            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_q
+            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_q
+            self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale
+            self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale
+        else:
+            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_slot
+            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_slot
 
     def write_sequence_kv(
         self,
@@ -120,8 +153,20 @@ class BlockPool:
             block_idx = token_pos // self.block_size
             slot_offset = token_pos % self.block_size
             block_id = physical_block_ids[block_idx]
-            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_seq[:, i, :]
-            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_seq[:, i, :]
+            k_t = k_seq[:, i, :]
+            v_t = v_seq[:, i, :]
+            if self.kv_cache_dtype == "int8":
+                k_scale = torch.clamp(k_t.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
+                v_scale = torch.clamp(v_t.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
+                k_q = torch.clamp(torch.round(k_t / k_scale), -128, 127).to(torch.int8)
+                v_q = torch.clamp(torch.round(v_t / v_scale), -128, 127).to(torch.int8)
+                self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_q
+                self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_q
+                self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale
+                self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale
+            else:
+                self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_t
+                self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_t
 
     def read_sequence_kv(
         self,
@@ -144,6 +189,12 @@ class BlockPool:
         # Extract blocks: [num_blocks_needed, num_kv_heads, block_size, head_dim]
         k_blocks = self.key_caches[layer_idx][needed_block_ids]
         v_blocks = self.value_caches[layer_idx][needed_block_ids]
+
+        if self.kv_cache_dtype == "int8":
+            k_scales = self.key_scales[layer_idx][needed_block_ids]
+            v_scales = self.value_scales[layer_idx][needed_block_ids]
+            k_blocks = k_blocks.to(self.dtype) * k_scales
+            v_blocks = v_blocks.to(self.dtype) * v_scales
 
         # Reshape to [num_kv_heads, total_slots, head_dim]
         n_b = len(needed_block_ids)

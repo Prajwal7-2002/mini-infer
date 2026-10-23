@@ -128,3 +128,45 @@ def test_block_pool_paged_read_write():
     assert mask[1, 0, 0, 0].item() is True
     assert mask[1, 0, 0, 1].item() is True
 
+
+def test_block_pool_int8_quantization():
+    pool = BlockPool(
+        num_blocks=4,
+        block_size=16,
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=8,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        kv_cache_dtype="int8",
+    )
+    # Verify underlying storage is 1 byte int8
+    assert pool.key_caches[0].dtype == torch.int8
+    assert pool.value_caches[0].dtype == torch.int8
+    assert pool.key_scales is not None
+    assert pool.value_scales is not None
+
+    b0 = pool.allocate_block()
+
+    # Write single slot
+    k_vec = torch.randn(2, 8)
+    v_vec = torch.randn(2, 8)
+    pool.write_slot(layer_idx=0, block_id=b0, slot_offset=0, k_slot=k_vec, v_slot=v_vec)
+
+    # Read back - should dequantize back to float32 with minimal quantization error
+    k_read, v_read = pool.read_sequence_kv(layer_idx=0, physical_block_ids=[b0], num_tokens=1)
+    assert k_read.dtype == torch.float32
+    assert v_read.dtype == torch.float32
+    assert torch.allclose(k_read[0, :, 0, :], k_vec, atol=0.08, rtol=0.08)
+    assert torch.allclose(v_read[0, :, 0, :], v_vec, atol=0.08, rtol=0.08)
+
+    # Test batched gather with int8
+    block_tables = [[b0]]
+    context_lens = [1]
+    k_batch, v_batch, mask = pool.gather_batched_paged_kv(
+        layer_idx=0, block_tables=block_tables, context_lens=context_lens
+    )
+    assert k_batch.dtype == torch.float32
+    assert k_batch.shape == (1, 2, 1, 8)
+    assert mask[0, 0, 0, 0].item() is True
+

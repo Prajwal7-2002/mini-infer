@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mini-infer"
-version = "0.2.1"
+version = "0.2.2"
 description = "A minimal, high-performance continuous-batching LLM inference engine with paged KV-cache, prefix caching, and speculative decoding for Qwen2.5."
 readme = "README.md"
 license = "Apache-2.0"

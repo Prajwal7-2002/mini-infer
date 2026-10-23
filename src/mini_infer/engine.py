@@ -25,6 +25,7 @@ class InferenceEngine:
         chunked_prefill_size: int = 512,
         enable_prefix_caching: bool = True,
         device: torch.device | None = None,
+        kv_cache_dtype: str = "auto",
     ):
         if device is None:
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,6 +35,7 @@ class InferenceEngine:
         self.block_size = block_size
         self.chunked_prefill_size = chunked_prefill_size
         self.enable_prefix_caching = enable_prefix_caching
+        self.kv_cache_dtype = kv_cache_dtype
 
         # 1. Paged KV memory pool
         self.block_pool = BlockPool(
@@ -44,6 +46,7 @@ class InferenceEngine:
             head_dim=config.head_dim,
             device=device,
             dtype=next(model.parameters()).dtype,
+            kv_cache_dtype=kv_cache_dtype,
         )
 
         # 2. Prefix Cache (Radix / Hash based)
