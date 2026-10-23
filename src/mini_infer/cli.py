@@ -154,6 +154,10 @@ def chat(
             console.print(
                 f"[green]Loaded context from {c_path.name}:[/green] ~{estimate_tokens(context_str)} tokens"
             )
+        else:
+            console.print(
+                f"[yellow]Warning: Context path '{context}' not found. Starting chat without codebase context.[/yellow]"
+            )
 
     console.print(f"Loading weights for [bold green]{model}[/bold green]...")
     tokenizer = AutoTokenizer.from_pretrained(model)
