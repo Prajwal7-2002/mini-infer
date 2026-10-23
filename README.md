@@ -14,6 +14,10 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 
 **mini-infer** implements these exact production algorithms in **pure, readable, testable Python/PyTorch** designed to run on a single consumer GPU (such as an entry-level 6 GB laptop GPU or a free Kaggle T4), with **zero C++ compiler or CMake toolchain required**.
 
+> [!IMPORTANT]
+> **Our Mission**: *Safe, secure, and optimized for every machine.*  
+> We believe high-performance LLM systems should not require $10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
+
 ---
 
 ## ⚡ Core Architecture
@@ -260,6 +264,43 @@ Evaluated live on **NVIDIA GeForce RTX 3050 6GB Laptop GPU** using zero-overhead
 | **Memory Preemption** | ✅ (Graceful re-queue) | ✅ (Recompute/Swap) | ❌ (Drop) | ❌ |
 | **Hardware Barrier** | None (Runs on Laptop GPU) | High (Requires full CUDA toolkit) | Low (Runs on CPU/GPU) | None |
 | **Code Readability** | ⭐⭐⭐⭐⭐ (Clean & Modular) | ⭐⭐ (Deep C++ macros) | ⭐⭐ (Low-level C) | ⭐⭐⭐ (Heavy abstraction) |
+
+---
+
+## 🤖 Powering Autonomous Coding Agents ($0 Cost, 100% Private)
+
+Because `mini-infer` implements an OpenAI-compatible `/v1/chat/completions` streaming API, it serves as a high-throughput, zero-cost backend for local AI and coding agents:
+
+### 1. Terminal Pair-Programming Agent ([Aider](https://aider.chat/))
+Run a full-featured terminal coding agent on your local git repository without paying OpenAI API tokens or exposing proprietary code:
+```bash
+# Terminal 1: Launch mini-infer with Qwen2.5-Coder
+mini-infer serve --model Qwen/Qwen2.5-Coder-0.5B-Instruct --port 8000
+
+# Terminal 2: Run Aider connected to your local mini-infer
+aider --openai-api-base http://127.0.0.1:8000/v1 --openai-api-key none --model openai/Qwen/Qwen2.5-Coder-0.5B-Instruct
+```
+
+### 2. In-Editor Copilot in VS Code ([Continue.dev](https://continue.dev/))
+Connect `mini-infer` to Continue for free in-editor autocomplete, inline code refactoring (`Ctrl+I`), and workspace chat (`Ctrl+L`):
+```json
+{
+  "models": [
+    {
+      "title": "Local Qwen Coder (mini-infer)",
+      "provider": "openai",
+      "model": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+      "apiBase": "http://127.0.0.1:8000/v1",
+      "apiKey": "none"
+    }
+  ]
+}
+```
+
+### 3. Why `mini-infer` Excels at Agentic Workloads
+* **Radix Prefix Caching**: Autonomous agents repeatedly send full repository file trees, schemas, and instructions on every step. With radix prefix caching, TTFT drops from 500 ms to **< 15 ms**, completely bypassing redundant quadratic prompt prefill.
+* **Continuous Batching for Multi-Agent Loops**: When orchestrating multi-agent loops (e.g., Planner + Critic + Coder in AutoGen, CrewAI, or LangGraph), `mini-infer` dynamically batches concurrent subagent streams in a unified `[batch_size, 1]` forward pass.
+* **Graceful Preemption**: Prevents out-of-memory crashes during burst multi-agent tool loops by re-queueing lowest-priority sequences back to `WAITING`.
 
 ---
 
