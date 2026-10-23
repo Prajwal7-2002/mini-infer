@@ -207,25 +207,31 @@ mini-infer repomap ./src --max-tokens 1000
 mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
 ```
 
-### 2. Launch Local Serving with INT8 KV-Cache
-Run an instruction-tuned coding model with 50% KV DRAM savings:
+### Option A: Fastest Zero-Config Way (`mini-infer chat`)
+If you want to immediately ask questions about your code without configuring VS Code or API keys:
 ```bash
-mini-infer serve \
-  --model Qwen/Qwen2.5-Coder-1.5B-Instruct \
-  --kv-cache-dtype int8 \
-  --port 8000
+# In any project directory:
+mini-infer chat -c ./src
 ```
+It extracts the AST skeleton, starts the model with INT8 KV-cache, and lets you chat directly in your terminal!
 
-### 3. Connect Your Editor or Agent
-Because `mini-infer` exposes standard OpenAI endpoints (`http://127.0.0.1:8000/v1`):
-* **Cursor**: Set OpenAI Base URL to `http://127.0.0.1:8000/v1`, API Key to `dummy`, and model to `Qwen/Qwen2.5-Coder-1.5B-Instruct`.
-* **VS Code (Continue)**: Set provider to `openai`, apiBase to `http://127.0.0.1:8000/v1`.
-* **Aider (Terminal Pair Programmer)**:
-  ```bash
-  export OPENAI_API_BASE=http://127.0.0.1:8000/v1
-  export OPENAI_API_KEY=dummy
-  aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
-  ```
+---
+
+### Option B: Connect Your Editor or Agent (Cursor / VS Code Continue / Aider)
+Because `mini-infer serve` exposes standard OpenAI endpoints (`http://127.0.0.1:8000/v1`):
+1. **Start the server**:
+   ```bash
+   mini-infer serve --model Qwen/Qwen2.5-Coder-1.5B-Instruct --kv-cache-dtype int8 --port 8000
+   ```
+2. **Connect**:
+   * **Cursor**: Set OpenAI Base URL to `http://127.0.0.1:8000/v1`, API Key to `dummy`, and model to `Qwen/Qwen2.5-Coder-1.5B-Instruct`.
+   * **VS Code (Continue)**: Set provider to `openai`, apiBase to `http://127.0.0.1:8000/v1`.
+   * **Aider (Terminal Pair Programmer)**:
+     ```bash
+     export OPENAI_API_BASE=http://127.0.0.1:8000/v1
+     export OPENAI_API_KEY=dummy
+     aider --model openai/Qwen/Qwen2.5-Coder-1.5B-Instruct
+     ```
 
 ### Why This Works on a Laptop GPU:
 * **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.

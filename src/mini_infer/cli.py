@@ -107,6 +107,125 @@ def repomap(
 
 
 @app.command()
+def chat(
+    model: str = typer.Option(
+        "Qwen/Qwen2.5-0.5B-Instruct", "--model", "-m", help="Model path or HuggingFace repo ID"
+    ),
+    context: str | None = typer.Option(
+        None, "--context", "-c", help="Directory to index or markdown context file path"
+    ),
+    max_tokens: int = typer.Option(256, "--max-tokens", help="Maximum tokens per completion"),
+    device: str = typer.Option("auto", "--device", help="Device (cuda/cpu/auto)"),
+    kv_cache_dtype: str = typer.Option(
+        "int8", "--kv-cache-dtype", help="KV-cache precision (auto/int8)"
+    ),
+):
+    """Interactive terminal coding chat with automatic codebase context and prefix caching."""
+    from pathlib import Path
+
+    import torch
+    from transformers import AutoTokenizer
+
+    from mini_infer.engine import InferenceEngine
+    from mini_infer.models.loader import load_model_from_safetensors
+    from mini_infer.repomap import build_repo_map, estimate_tokens
+
+    selected_device = (
+        "cuda"
+        if (device == "auto" and torch.cuda.is_available())
+        else ("cpu" if device == "auto" else device)
+    )
+
+    console.print(
+        f"[bold cyan]mini-infer interactive chat[/bold cyan] ({selected_device}, kv={kv_cache_dtype})"
+    )
+
+    context_str = ""
+    if context:
+        c_path = Path(context)
+        if c_path.is_dir():
+            console.print(f"Indexing repository AST for [cyan]{c_path.resolve()}[/cyan]...")
+            context_str = build_repo_map(c_path, max_tokens=1200)
+            console.print(
+                f"[green]Indexed codebase:[/green] ~{estimate_tokens(context_str)} tokens"
+            )
+        elif c_path.is_file():
+            context_str = c_path.read_text(encoding="utf-8")
+            console.print(
+                f"[green]Loaded context from {c_path.name}:[/green] ~{estimate_tokens(context_str)} tokens"
+            )
+
+    console.print(f"Loading weights for [bold green]{model}[/bold green]...")
+    tokenizer = AutoTokenizer.from_pretrained(model)
+    model_instance, config = load_model_from_safetensors(model, device=selected_device)
+
+    engine = InferenceEngine(
+        model=model_instance,
+        config=config,
+        num_blocks=1024,
+        block_size=16,
+        device=torch.device(selected_device),
+        kv_cache_dtype=kv_cache_dtype,
+        enable_prefix_caching=True,
+    )
+
+    messages = []
+    if context_str:
+        messages.append(
+            {
+                "role": "system",
+                "content": f"You are an expert AI software engineer. You have access to this codebase outline:\n\n{context_str}\n\nProvide clean, production-ready code with concise explanations.",
+            }
+        )
+    else:
+        messages.append(
+            {
+                "role": "system",
+                "content": "You are an expert AI software engineer. Provide clean, production-ready code.",
+            }
+        )
+
+    console.print(
+        "\n[bold green]Chat ready![/bold green] Ask any question about your codebase (type 'exit' or 'quit' to stop).\n"
+    )
+
+    req_idx = 0
+    while True:
+        try:
+            user_input = typer.prompt("User")
+        except (KeyboardInterrupt, EOFError):
+            break
+        if user_input.strip().lower() in ("exit", "quit", "q"):
+            break
+        if not user_input.strip():
+            continue
+
+        messages.append({"role": "user", "content": user_input})
+        prompt_text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        prompt_ids = tokenizer.encode(prompt_text)
+
+        req_id = f"chat-{req_idx}"
+        req_idx += 1
+        engine.add_request(prompt_ids, max_tokens=max_tokens, request_id=req_id)
+
+        console.print("[bold cyan]mini-infer:[/bold cyan] ", end="")
+        gen_tokens = []
+        while engine.scheduler.has_unfinished_sequences():
+            out = engine.step()
+            if out:
+                for s, tok_id in out:
+                    if s.request_id == req_id:
+                        gen_tokens.append(tok_id)
+                        token_str = tokenizer.decode([tok_id], skip_special_tokens=True)
+                        print(token_str, end="", flush=True)
+        print("\n")
+        reply = tokenizer.decode(gen_tokens, skip_special_tokens=True)
+        messages.append({"role": "assistant", "content": reply})
+
+
+@app.command()
 def info():
     """Display system hardware and GPU VRAM budget for mini-infer."""
     import torch

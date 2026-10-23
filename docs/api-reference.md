@@ -56,6 +56,25 @@ mini-infer repomap [PATH] [OPTIONS]
 
 ---
 
+### 4. `mini-infer chat`
+Interactive terminal coding chat with automatic codebase context and prefix caching.
+
+```bash
+mini-infer chat [OPTIONS]
+```
+
+**Options:**
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--model`, `-m` | `TEXT` | `Qwen/Qwen2.5-0.5B-Instruct` | Model name or local checkpoint path |
+| `--context`, `-c` | `TEXT` | `None` | Directory path to index or existing context markdown file |
+| `--max-tokens` | `INT` | `256` | Maximum generation tokens per reply |
+| `--device` | `TEXT` | `auto` | Compute device (`cuda`, `cpu`, or `auto`) |
+| `--kv-cache-dtype` | `TEXT` | `int8` | KV-cache precision: `auto` or `int8` |
+
+---
+
 ## HTTP API Reference
 
 ### `POST /v1/chat/completions`

@@ -45,7 +45,38 @@ uv sync
 
 ---
 
-## 2. Index Your Codebase into an AST Skeleton
+## 2. Beginner's 60-Second Terminal Chat (Zero Configuration)
+
+If you just want to ask questions and generate code **without configuring VS Code extensions, API keys, or web servers**, run the interactive chat tool directly against your project folder:
+
+```bash
+# In your project folder (e.g., EdgeSLM or your web app)
+mini-infer chat -c ./src
+```
+
+### What happens automatically:
+1. `mini-infer` extracts the AST architecture of `./src` (~1,000 tokens).
+2. It boots the coding model with **INT8 KV-cache** on your GPU.
+3. You get an interactive prompt where you can chat in plain English:
+
+```text
+mini-infer interactive chat (cuda, kv=int8)
+Indexing repository AST for D:\my_app\src...
+Indexed codebase: ~960 tokens
+Loading weights for Qwen/Qwen2.5-0.5B-Instruct...
+
+Chat ready! Ask any question about your codebase (type 'exit' to quit).
+
+User: Where are database connections created, and how can I add connection pooling?
+mini-infer: Based on `db/session.py`, database connections are initialized using...
+
+User: Now write a pytest test verifying the pool closes on shutdown.
+mini-infer: [Prefix-cache hit, responds in 0.5s!] Here is the test:
+```
+
+---
+
+## 3. Index Your Codebase into an AST Skeleton (For IDEs & Scripts)
 
 Navigate to your target project (e.g. Django app, FastAPI backend, or data science repository) and extract an AST skeleton:
 
@@ -120,7 +151,30 @@ You ask: *"Now write the pytest unit test for the refresh logic."*
 
 ---
 
-## 5. Python SDK Integration
+## 5. Prompting Cookbook: Exact Prompts to Type
+
+Here are 4 tested prompt patterns that get precise code out of local models without hallucinating:
+
+### Pattern 1: Architecture Exploration
+> **Prompt**: `"Based on the codebase outline, explain how requests flow from `api/app.py` into the model inference loop. Which classes are involved?"`
+
+### Pattern 2: Adding a New Feature or Endpoint
+> **Prompt**: `"In `api/app.py`, implement a new GET endpoint `/metrics` that returns server uptime and memory usage. Follow the existing FastAPI style and return a Pydantic model."`
+
+### Pattern 3: Writing Pytest Unit Tests
+> **Prompt**: `"Write a unit test file `tests/test_metrics.py` testing the `/metrics` endpoint using `httpx.AsyncClient` or FastAPI `TestClient`. Include happy-path and error cases."`
+
+### Pattern 4: Surgical Refactoring (Search/Replace Format)
+> **Prompt**: `"In `cache/block_pool.py`, modify `allocate_block` to check if free blocks are empty before popping. Output the change using this format:
+> <<<<<<< SEARCH
+> [original lines]
+> =======
+> [new lines]
+> >>>>>>> REPLACE"`
+
+---
+
+## 6. Python SDK Integration
 
 If you are building an automated coding agent, CI reviewer, or custom CLI tool:
 
@@ -150,7 +204,7 @@ for token in engine.generate_stream(prompt):
 
 ---
 
-## 6. Real-World Silicon Proof: Synthesizing Code for `EdgeSLM`
+## 7. Real-World Silicon Proof: Synthesizing Code for `EdgeSLM`
 
 To prove zero-hallucination context injection and VRAM stability on physical consumer hardware, `mini-infer` was benchmarked end-to-end against a production repository ([`EdgeSLM`](https://github.com/Prajwal7-2002/EdgeSLM)) containing 15 subdirectories, ONNX quantization engines, and FastAPI endpoints.
 
