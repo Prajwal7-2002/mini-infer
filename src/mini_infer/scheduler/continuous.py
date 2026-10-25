@@ -2,6 +2,7 @@ import uuid
 from enum import Enum
 
 from mini_infer.cache.block_pool import BlockPool, BlockTable
+from mini_infer.models.sampler import SamplingParams
 
 
 class SequenceStatus(Enum):
@@ -21,19 +22,58 @@ class Sequence:
         top_p: float = 1.0,
         stop_token_ids: set[int] | None = None,
         request_id: str | None = None,
+        sampling_params: SamplingParams | None = None,
     ):
         self.request_id = request_id or str(uuid.uuid4())[:8]
         self.prompt_token_ids = list(prompt_token_ids)
         self.output_token_ids: list[int] = []
-        self.max_tokens = max_tokens
-        self.temperature = temperature
-        self.top_p = top_p
-        self.stop_token_ids = stop_token_ids or set()
+
+        if sampling_params is not None:
+            self.sampling_params = sampling_params
+        else:
+            self.sampling_params = SamplingParams(
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                stop_token_ids=stop_token_ids or set(),
+            )
 
         self.status = SequenceStatus.WAITING
         self.block_table = BlockTable(block_size=16)
         self.past_key_values = None
         self.prompt_tokens_processed: int = 0
+
+    @property
+    def max_tokens(self) -> int:
+        return self.sampling_params.max_tokens
+
+    @max_tokens.setter
+    def max_tokens(self, val: int):
+        self.sampling_params.max_tokens = val
+
+    @property
+    def temperature(self) -> float:
+        return self.sampling_params.temperature
+
+    @temperature.setter
+    def temperature(self, val: float):
+        self.sampling_params.temperature = val
+
+    @property
+    def top_p(self) -> float:
+        return self.sampling_params.top_p
+
+    @top_p.setter
+    def top_p(self, val: float):
+        self.sampling_params.top_p = val
+
+    @property
+    def stop_token_ids(self) -> set[int]:
+        return self.sampling_params.stop_token_ids
+
+    @stop_token_ids.setter
+    def stop_token_ids(self, val: set[int]):
+        self.sampling_params.stop_token_ids = val
 
     @property
     def num_prompt_tokens(self) -> int:
