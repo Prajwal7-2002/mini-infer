@@ -1,5 +1,32 @@
+from dataclasses import dataclass, field
+
 import torch
 import torch.nn.functional as F
+
+
+@dataclass
+class SamplingParams:
+    """Sampling parameters for text generation.
+
+    Attributes:
+        max_tokens: Maximum number of new tokens to generate.
+        temperature: Sampling temperature. Values <= 1e-5 trigger greedy argmax.
+        top_p: Nucleus sampling probability cutoff (0.0 < top_p <= 1.0).
+        top_k: Top-k tokens to keep (>0). -1 disables top-k filtering.
+        min_p: Minimum probability threshold relative to maximum token probability.
+        stop_token_ids: Set of token IDs that immediately terminate generation.
+    """
+
+    max_tokens: int = 128
+    temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = -1
+    min_p: float = 0.0
+    stop_token_ids: set[int] = field(default_factory=set)
+
+    def is_greedy(self) -> bool:
+        """Return True if deterministic greedy argmax sampling applies."""
+        return self.temperature <= 1e-5
 
 
 def sample_next_token(
@@ -21,9 +48,15 @@ def sample_next_token(
     Returns:
         Tensor of shape [batch_size, 1] containing sampled token IDs.
     """
+    # Normalize 1D logits to 2D [batch_size, vocab_size]
+    is_1d = logits.dim() == 1
+    if is_1d:
+        logits = logits.unsqueeze(0)
+
     # 1. Greedy argmax
     if temperature <= 1e-5:
-        return torch.argmax(logits, dim=-1, keepdim=True)
+        out = torch.argmax(logits, dim=-1, keepdim=True)
+        return out.squeeze(0) if is_1d else out
 
     # 2. Temperature scaling
     logits = logits / temperature
@@ -61,4 +94,5 @@ def sample_next_token(
 
     # 6. Categorical multinomial sampling
     probs = F.softmax(logits, dim=-1)
-    return torch.multinomial(probs, num_samples=1)
+    out = torch.multinomial(probs, num_samples=1)
+    return out.squeeze(0) if is_1d else out

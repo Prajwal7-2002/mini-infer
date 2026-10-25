@@ -4,7 +4,7 @@ from mini_infer.cache.block_pool import BlockPool
 from mini_infer.cache.prefix_cache import PrefixCache
 from mini_infer.models.config import Qwen2Config
 from mini_infer.models.qwen2 import Qwen2ForCausalLM
-from mini_infer.models.sampler import sample_next_token
+from mini_infer.models.sampler import SamplingParams, sample_next_token
 from mini_infer.scheduler.continuous import (
     ContinuousScheduler,
     Sequence,
@@ -62,13 +62,27 @@ class InferenceEngine:
     def add_request(
         self,
         prompt_token_ids: list[int],
+        sampling_params: SamplingParams | None = None,
         max_tokens: int = 128,
         temperature: float = 0.0,
         top_p: float = 1.0,
         stop_token_ids: set[int] | None = None,
         request_id: str | None = None,
     ) -> Sequence:
-        """Submit a new request to the waiting queue."""
+        """Submit a new request to the waiting queue.
+
+        Args:
+            prompt_token_ids: Tokenized prompt sequence.
+            sampling_params: Encapsulated generation hyperparameters.
+            max_tokens: Maximum tokens to generate (if sampling_params is omitted).
+            temperature: Sampling temperature (if sampling_params is omitted).
+            top_p: Nucleus sampling probability cutoff (if sampling_params is omitted).
+            stop_token_ids: Token IDs that terminate generation (if sampling_params is omitted).
+            request_id: Optional tracking identifier.
+
+        Returns:
+            Created Sequence instance.
+        """
         seq = Sequence(
             prompt_token_ids=prompt_token_ids,
             max_tokens=max_tokens,
@@ -76,6 +90,7 @@ class InferenceEngine:
             top_p=top_p,
             stop_token_ids=stop_token_ids,
             request_id=request_id,
+            sampling_params=sampling_params,
         )
         self.scheduler.add_sequence(seq)
         return seq
@@ -141,6 +156,8 @@ class InferenceEngine:
                     logits[:, -1, :],
                     temperature=seq.temperature,
                     top_p=seq.top_p,
+                    top_k=seq.sampling_params.top_k,
+                    min_p=seq.sampling_params.min_p,
                 ).item()
 
                 seq.append_token(next_token)
@@ -187,13 +204,22 @@ class InferenceEngine:
                     )
 
                 # Sample next token for each sequence in the batch
-                for idx, seq in enumerate(active_decodes):
-                    next_tok = sample_next_token(
-                        logits[idx, -1, :],
-                        temperature=seq.temperature,
-                        top_p=seq.top_p,
-                    ).item()
-                    seq.append_token(next_tok)
-                    step_outputs.append((seq, next_tok))
+                # Fast path: all sequences in batch are greedy (temperature <= 1e-5)
+                if all(s.sampling_params.is_greedy() for s in active_decodes):
+                    next_tokens = torch.argmax(logits[:, -1, :], dim=-1).tolist()
+                    for seq, next_tok in zip(active_decodes, next_tokens, strict=True):
+                        seq.append_token(next_tok)
+                        step_outputs.append((seq, next_tok))
+                else:
+                    for idx, seq in enumerate(active_decodes):
+                        next_tok = sample_next_token(
+                            logits[idx, -1, :],
+                            temperature=seq.temperature,
+                            top_p=seq.top_p,
+                            top_k=seq.sampling_params.top_k,
+                            min_p=seq.sampling_params.min_p,
+                        ).item()
+                        seq.append_token(next_tok)
+                        step_outputs.append((seq, next_tok))
 
         return step_outputs
