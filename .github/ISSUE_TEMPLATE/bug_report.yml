@@ -1,0 +1,66 @@
+name: "🐛 Bug Report"
+description: "Report a bug or unexpected behavior in mini-infer"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Before submitting, please ensure the bug is reproducible with the latest version of `mini-infer`.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Bug
+      description: A clear and concise description of what the bug is.
+      placeholder: "When running mini-infer serve with --kv-cache-dtype int8, ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal Steps to Reproduce
+      description: Exact commands or minimal Python script required to reproduce the issue.
+      placeholder: |
+        1. Run `mini-infer serve --model Qwen/Qwen2.5-0.5B-Instruct --quant int4`
+        2. Send request via curl: `curl http://127.0.0.1:8000/v1/chat/completions ...`
+        3. Observe error: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Traceback / Console Logs
+      description: Please paste the full traceback from your terminal inside a code block.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Hardware & Environment Diagnostics
+      description: Run `mini-infer info` or provide your system environment details.
+      placeholder: |
+        - OS: Windows 11 / Ubuntu 22.04 / macOS (Apple Silicon)
+        - Python Version: (e.g. 3.12.10)
+        - PyTorch Version: (e.g. 2.5.1)
+        - GPU / Compute: (e.g. NVIDIA RTX 3050 6GB / CPU / Apple M2)
+        - CUDA / Driver Version: (if applicable)
+        - mini-infer Version: (e.g. 0.2.7)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Validation Checklist
+      options:
+        - label: I have verified this issue exists on the latest `main` branch or PyPI version.
+          required: true
+        - label: I have checked existing issues to ensure this is not a duplicate.
+          required: true
+        - label: I am willing to submit a Pull Request to fix this issue if guided.
+          required: false
