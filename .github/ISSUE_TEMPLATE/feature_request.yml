@@ -1,0 +1,58 @@
+name: "✨ Feature Request / Architectural Proposal"
+description: "Suggest a new feature, model loader, quantization scheme, or performance enhancement"
+title: "[Feature]: "
+labels: ["enhancement", "proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome feature proposals that align with `mini-infer`'s mission: **pure Python/PyTorch LLM systems that run on consumer hardware with zero C++ compiler requirements**.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement / Motivation
+      description: Is your feature request related to a problem or limitation?
+      placeholder: "I am always frustrated when trying to run Llama-3.2-1B because..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution / Architecture
+      description: Describe your proposed design, API syntax, or algorithm.
+      placeholder: |
+        Add a native `LlamaForCausalLM` loader in `mini_infer.models.loader` that maps GQA attention weights directly from Safetensors...
+    validations:
+      required: true
+
+  - type: textarea
+    id: silicon_budget
+    attributes:
+      label: Silicon & Hardware Budget Impact
+      description: How does this proposal impact memory, latency, and consumer GPU viability?
+      placeholder: |
+        - VRAM Footprint: Keeps model weights within 2.5 GB on a 6GB GPU.
+        - Dependency Impact: Zero external C++ or non-PyTorch dependencies added.
+        - Compute Complexity: Bounded $O(1)$ memory paging per decode step.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What other solutions or workarounds have you considered?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: implementation
+    attributes:
+      label: Contribution Readiness
+      options:
+        - label: I have reviewed the [Architectural Invariants](https://github.com/Prajwal7-2002/mini-infer/blob/main/CONTRIBUTING.md) and confirm this feature maintains the pure PyTorch rule.
+          required: true
+        - label: I am willing to implement this feature and submit a Pull Request.
+          required: false
