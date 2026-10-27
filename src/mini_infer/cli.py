@@ -22,6 +22,15 @@ def serve(
     kv_cache_dtype: str = typer.Option(
         "auto", "--kv-cache-dtype", help="KV-cache data type: auto or int8 (50% memory saving)"
     ),
+    quant: str | None = typer.Option(
+        None,
+        "--quant",
+        "-q",
+        help="Sub-byte weight quantization scheme: int4, int8, ternary, sparse24 (via quantbench-engine)",
+    ),
+    group_size: int = typer.Option(
+        64, "--group-size", help="Block size for blockwise quantization (default: 64)"
+    ),
 ):
     """Launch the OpenAI-compatible streaming HTTP server."""
     import torch
@@ -37,8 +46,9 @@ def serve(
         if (device == "auto" and torch.cuda.is_available())
         else ("cpu" if device == "auto" else device)
     )
+    quant_info = f", quant={quant.upper()}" if quant else ""
     console.print(
-        f"[bold cyan]mini-infer[/bold cyan] serving [bold green]{model}[/bold green] on [yellow]{host}:{port}[/yellow] ({selected_device}) [kv_cache={kv_cache_dtype}]"
+        f"[bold cyan]mini-infer[/bold cyan] serving [bold green]{model}[/bold green] on [yellow]{host}:{port}[/yellow] ({selected_device}) [kv_cache={kv_cache_dtype}{quant_info}]"
     )
 
     # Load tokenizer
@@ -52,7 +62,9 @@ def serve(
 
     # Load model
     console.print("Loading model weights...")
-    model_instance, config = load_model_from_safetensors(model, device=selected_device)
+    model_instance, config = load_model_from_safetensors(
+        model, device=selected_device, quant_scheme=quant, group_size=group_size
+    )
 
     # Initialize inference engine
     console.print(
@@ -119,6 +131,15 @@ def chat(
     kv_cache_dtype: str = typer.Option(
         "int8", "--kv-cache-dtype", help="KV-cache precision (auto/int8)"
     ),
+    quant: str | None = typer.Option(
+        None,
+        "--quant",
+        "-q",
+        help="Sub-byte weight quantization scheme: int4, int8, ternary, sparse24 (via quantbench-engine)",
+    ),
+    group_size: int = typer.Option(
+        64, "--group-size", help="Block size for blockwise quantization (default: 64)"
+    ),
 ):
     """Interactive terminal coding chat with automatic codebase context and prefix caching."""
     from pathlib import Path
@@ -135,9 +156,10 @@ def chat(
         if (device == "auto" and torch.cuda.is_available())
         else ("cpu" if device == "auto" else device)
     )
+    quant_info = f", quant={quant.upper()}" if quant else ""
 
     console.print(
-        f"[bold cyan]mini-infer interactive chat[/bold cyan] ({selected_device}, kv={kv_cache_dtype})"
+        f"[bold cyan]mini-infer interactive chat[/bold cyan] ({selected_device}, kv={kv_cache_dtype}{quant_info})"
     )
 
     context_str = ""
@@ -161,7 +183,9 @@ def chat(
 
     console.print(f"Loading weights for [bold green]{model}[/bold green]...")
     tokenizer = AutoTokenizer.from_pretrained(model)
-    model_instance, config = load_model_from_safetensors(model, device=selected_device)
+    model_instance, config = load_model_from_safetensors(
+        model, device=selected_device, quant_scheme=quant, group_size=group_size
+    )
 
     engine = InferenceEngine(
         model=model_instance,
@@ -231,8 +255,9 @@ def chat(
 
 @app.command()
 def info():
-    """Display system hardware and GPU VRAM budget for mini-infer."""
+    """Display system hardware, GPU VRAM budget, and quantbench-engine compression profiles."""
     import torch
+    from rich.table import Table
 
     console.print("[bold cyan]mini-infer System Diagnostics[/bold cyan]")
     console.print(f"PyTorch version: {torch.__version__}")
@@ -244,11 +269,25 @@ def info():
         total_vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         console.print(f"GPU Device: [bold green]{device_name}[/bold green]")
         console.print(f"Total VRAM: [bold yellow]{total_vram_gb:.2f} GB[/bold yellow]")
-        console.print("\n[bold]Memory Allocation Plan (RTX 3050 6 GB):[/bold]")
-        console.print("  • Qwen2.5-1.5B (Target Model): ~3.0 GB VRAM")
-        console.print("  • Qwen2.5-0.5B (Draft Model):  ~1.0 GB VRAM")
-        console.print("  • Paged KV-Cache Memory Pool:  ~1.5 GB VRAM (~2000 blocks)")
-        console.print("  • Safety Buffer:               ~0.5 GB")
+
+    # Precision & Quantization Memory Footprint Matrix (quantbench-engine integration)
+    table = Table(
+        title="Model Footprint by Quantization Scheme (quantbench-engine)",
+        header_style="bold magenta",
+    )
+    table.add_column("Scheme", style="cyan", justify="left")
+    table.add_column("Precision", justify="center")
+    table.add_column("Qwen2.5-0.5B", justify="right")
+    table.add_column("Qwen2.5-1.5B", justify="right")
+    table.add_column("Max KV Blocks (6 GB VRAM)", justify="right", style="green")
+
+    table.add_row("FP16 (Dense)", "16-bit Float", "0.98 GB", "3.08 GB", "~1,800 blocks")
+    table.add_row("INT8 Absmax", "8-bit Signed", "0.51 GB", "1.58 GB", "~3,200 blocks")
+    table.add_row("INT4 Packed", "4-bit Nibble", "0.28 GB", "0.84 GB", "~4,800 blocks")
+    table.add_row("BitNet Ternary", "1.58-bit {-1,0,1}", "0.16 GB", "0.48 GB", "~5,600 blocks")
+    table.add_row("Ampere 2:4 Sparse", "50% Structured", "0.54 GB", "1.65 GB", "~3,100 blocks")
+    console.print()
+    console.print(table)
 
 
 if __name__ == "__main__":

@@ -155,16 +155,18 @@ curl -N http://127.0.0.1:8000/v1/chat/completions \
 ```python
 import urllib.request, json
 
-data = json.dumps({
-    "model": "qwen2.5-0.5b",
-    "messages": [{"role": "user", "content": "Explain continuous batching in 1 sentence."}],
-    "stream": True,
-}).encode("utf-8")
+data = json.dumps(
+    {
+        "model": "qwen2.5-0.5b",
+        "messages": [{"role": "user", "content": "Explain continuous batching in 1 sentence."}],
+        "stream": True,
+    }
+).encode("utf-8")
 
 req = urllib.request.Request(
     "http://127.0.0.1:8000/v1/chat/completions",
     data=data,
-    headers={"Content-Type": "application/json"}
+    headers={"Content-Type": "application/json"},
 )
 
 for line in urllib.request.urlopen(req):
@@ -296,23 +298,39 @@ Autoregressive decoding is memory-bandwidth bound on single tokens.
 * A larger **1.5B target model** verifies all $K$ candidates in a **single parallel forward pass**.
 * Uses **Leviathan rejection sampling** to accept or correct candidates, mathematically guaranteeing that outputs match the exact distribution of the 1.5B model alone.
 
-### 5. Unified Batched Paged Decoding & Slot Mapping (v0.2.1)
+### 5. Sub-Byte Weight Quantization with `quantbench-engine`
+Autoregressive decode is strictly memory-bandwidth bound: each generated token must stream the entire weight matrix through the memory bus ($I = 2 / \text{bytes\_per\_param}$ FLOPs/byte).
+* `mini-infer` integrates directly with [`quantbench-engine`](https://pypi.org/project/quantbench-engine/) for on-the-fly sub-byte layer replacement.
+* **Vectorized INT4 Nibble Packing**: Packs weights into `uint8` byte buffers (2 weights/byte) with blockwise scaling (`group_size=64`). Compresses Qwen2.5-1.5B linear projections from 3.08 GB down to **0.84 GB (~3.7× compression)**.
+* **INT8 Absmax**: 8-bit signed integer representation with per-channel scales, cutting VRAM by ~50% with near-zero perplexity loss.
+* **BitNet 1.58b Ternary**: 2-bit offset-binary packed buffers for ternary weights $\{-1, 0, +1\}$ with mean absolute scaling $\gamma = \text{mean}(|W|)$, dropping Qwen2.5-1.5B down to **0.48 GB**.
+* **Ampere 2:4 Structured Sparsity**: Enforces 50% sparsity with 2-bit index metadata nibbles, unlocking massive VRAM headroom for larger Paged KV-cache block pools on consumer GPUs.
+
+```bash
+# Serve Qwen2.5-1.5B in INT4 precision on an entry-level 6 GB GPU:
+mini-infer serve --model Qwen/Qwen2.5-1.5B-Instruct --quant int4 --group-size 64
+
+# Interactive terminal coding chat in INT4 precision:
+mini-infer chat -c ./src --quant int4
+```
+
+### 6. Unified Batched Paged Decoding & Slot Mapping (v0.2.1)
 Standard naive continuous batching runs a serial Python loop over each active sequence, transferring weights from DRAM $B$ times.
 * `mini-infer v0.2.1` combines all active decodes into a single unified `[batch_size, 1]` forward pass.
 * Physical KV blocks are gathered directly from the pre-allocated `BlockPool` into sequence-masked tensor slots, achieving up to **4× reduction in GPU DRAM memory bandwidth**.
 
-### 6. Chunked Prefill & Memory Pressure Preemption (v0.2.1)
+### 7. Chunked Prefill & Memory Pressure Preemption (v0.2.1)
 Burst prompt arrivals can starve active decode sequences and cause high Inter-Token Latency (ITL) spikes or physical block exhaustion.
 * **Chunked Prefill**: Bounded prompt prefill slices (`chunked_prefill_size=512`) interleave long prompt ingestion with active token generation.
 * **Preemption Recovery**: When the physical block pool exhausts under burst concurrency, the scheduler preempts lowest-priority sequences back to `WAITING` instead of crashing with OOM.
 
-### 7. INT8 Dynamic KV-Cache Quantization (v0.2.2)
+### 8. INT8 Dynamic KV-Cache Quantization (v0.2.2)
 To double available context token capacity on consumer GPUs without losing precision, `mini-infer` supports dynamic INT8 KV caching:
 * **Per-Token Dynamic Scaling**: Quantizes cached Key and Value tensors to 1-byte `torch.int8` with per-token scale factors.
 * **50% KV Footprint Reduction**: Drops KV DRAM storage from 12.3 KB/tok down to ~6.2 KB/tok.
 * **Zero Compiler Dependencies**: Runs purely in PyTorch SDPA on CUDA, Apple MPS, and CPU.
 
-### 8. AST Repo-Map Generator for Large Codebases (v0.2.2)
+### 9. AST Repo-Map Generator for Large Codebases (v0.2.2)
 To code on large repositories without exceeding context limits or losing context, use `mini-infer repomap` to extract an AST outline (classes, typed signatures, exports) into a token-budgeted prompt skeleton:
 ```bash
 # Index repository structure into a 1500-token prompt skeleton

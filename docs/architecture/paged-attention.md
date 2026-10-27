@@ -62,15 +62,23 @@ In mini-infer (`src/mini_infer/cache/block_pool.py`), the physical pool is pre-a
 
 ```python
 class BlockPool:
-    def __init__(self, num_blocks: int, block_size: int = 16, num_layers: int = 24, num_kv_heads: int = 2, head_dim: int = 64, device: str = "cuda"):
+    def __init__(
+        self,
+        num_blocks: int,
+        block_size: int = 16,
+        num_layers: int = 24,
+        num_kv_heads: int = 2,
+        head_dim: int = 64,
+        device: str = "cuda",
+    ):
         self.block_size = block_size
         self.free_blocks = list(range(num_blocks))
-        
+
         # Pre-allocated continuous VRAM tensor: [num_blocks, 2 (K/V), num_layers, num_kv_heads, block_size, head_dim]
         self.pool = torch.zeros(
             (num_blocks, 2, num_layers, num_kv_heads, block_size, head_dim),
             dtype=torch.bfloat16,
-            device=device
+            device=device,
         )
 
     def allocate_block(self) -> int:
@@ -89,9 +97,9 @@ In `v0.2.0`, `gather_batched_paged_kv()` gathers past key and value tokens direc
 # Gathers physical blocks for all active sequences into a unified tensor [B, total_past_len, H, D]
 k_all, v_all, mask = block_pool.gather_batched_paged_kv(
     layer_idx=layer_idx,
-    block_tables=block_tables,   # List[List[int]] for each sequence
-    context_lens=context_lens,   # Sequence lengths
-    device=device
+    block_tables=block_tables,  # List[List[int]] for each sequence
+    context_lens=context_lens,  # Sequence lengths
+    device=device,
 )
 ```
 This zero-copy gather eliminates redundant DRAM weight transfers and drives continuous batching throughput.

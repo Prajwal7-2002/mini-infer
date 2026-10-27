@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -13,6 +14,55 @@ DT_MAP = {
     "I32": torch.int32,
     "I64": torch.int64,
 }
+
+
+def quantize_model(
+    model: Qwen2ForCausalLM,
+    scheme: str = "int4",
+    group_size: int = 64,
+    target_modules: list[str] | None = None,
+    exclude_modules: list[str] | None = None,
+    device: str | torch.device | None = None,
+) -> tuple[Qwen2ForCausalLM, dict[str, Any]]:
+    """In-place weight quantization using quantbench-engine.
+
+    Replaces target linear projection layers (Q/K/V/O attention projections
+    and MLP SwiGLU gate/up/down projections) with sub-byte packed QuantLinear buffers.
+
+    Args:
+        model: Target Qwen2ForCausalLM model instance.
+        scheme: Quantization scheme ('int4', 'int8', 'ternary', 'sparse24').
+        group_size: Block size for blockwise quantization (default: 64).
+        target_modules: Optional list of layer names to target.
+        exclude_modules: Module names to preserve unquantized (defaults to ['lm_head']).
+        device: Optional target device to ensure all buffers and bias parameters reside on.
+
+    Returns:
+        Tuple of (quantized_model, compression_statistics).
+    """
+    try:
+        from quantbench.nn import convert_model_to_quant
+    except ImportError as exc:
+        raise ImportError(
+            "quantbench-engine is required for sub-byte quantization. "
+            "Install it with `pip install quantbench-engine` or `uv add quantbench-engine`."
+        ) from exc
+
+    if exclude_modules is None:
+        exclude_modules = ["lm_head"]
+
+    model, stats = convert_model_to_quant(
+        model,
+        target_modules=target_modules,
+        exclude_modules=exclude_modules,
+        scheme=scheme,
+        group_size=group_size,
+    )
+
+    if device is not None:
+        model = model.to(device)
+
+    return model, stats
 
 
 def _load_safetensors_into_model(
@@ -53,13 +103,17 @@ def load_model_from_safetensors(
     model_dir_or_repo: str | Path,
     device: str | None = None,
     dtype: torch.dtype | None = None,
+    quant_scheme: str | None = None,
+    group_size: int = 64,
 ) -> tuple[Qwen2ForCausalLM, Qwen2Config]:
-    """Load Qwen2.5 weights directly from safetensors with zero host memory duplication.
+    """Load Qwen2.5 weights directly from safetensors with optional sub-byte quantization.
 
     Args:
         model_dir_or_repo: Local folder path or HuggingFace repo ID (e.g. 'Qwen/Qwen2.5-0.5B-Instruct').
         device: Target torch device ('cuda', 'cpu').
         dtype: Target torch dtype (torch.bfloat16, torch.float16, torch.float32).
+        quant_scheme: Optional quantization scheme ('int4', 'int8', 'ternary', 'sparse24').
+        group_size: Group size for blockwise quantization (default: 64).
 
     Returns:
         Tuple of (model, config).
@@ -123,6 +177,23 @@ def load_model_from_safetensors(
     # 4. Handle tied word embeddings
     if config.tie_word_embeddings:
         model.lm_head.weight = model.model.embed_tokens.weight
+
+    # 5. Optional Sub-Byte Quantization via quantbench-engine
+    if quant_scheme is not None:
+        print(
+            f"Applying {quant_scheme.upper()} quantization via quantbench-engine (group_size={group_size})..."
+        )
+        model, stats = quantize_model(
+            model,
+            scheme=quant_scheme,
+            group_size=group_size,
+            device=device,
+        )
+        print(
+            f"Quantization complete: converted {stats['converted_layers']} layers "
+            f"({stats['orig_memory_mb']} MB -> {stats['quant_memory_mb']} MB, "
+            f"{stats['compression_ratio']}x compression in {stats['duration_sec']}s)"
+        )
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
