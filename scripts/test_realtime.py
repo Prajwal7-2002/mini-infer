@@ -62,9 +62,13 @@ def main():
         2 * n_layers * n_kv_heads * block_size * 1 * num_blocks * 2
     )
 
-    print(f"      Paged KV Blocks: {num_blocks} blocks x {block_size} tokens = {num_blocks * block_size} token capacity")
+    print(
+        f"      Paged KV Blocks: {num_blocks} blocks x {block_size} tokens = {num_blocks * block_size} token capacity"
+    )
     print(f"      FP16/BF16 KV Pool Size: {fp16_bytes / (1024 * 1024):.2f} MB")
-    print(f"      INT8 Quantized Pool Size: {int8_bytes / (1024 * 1024):.2f} MB (-{(1 - int8_bytes / fp16_bytes) * 100:.1f}%)")
+    print(
+        f"      INT8 Quantized Pool Size: {int8_bytes / (1024 * 1024):.2f} MB (-{(1 - int8_bytes / fp16_bytes) * 100:.1f}%)"
+    )
 
     engine = InferenceEngine(
         model=model_instance,
@@ -87,7 +91,9 @@ def main():
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_query_1},
     ]
-    prompt_text_1 = tokenizer.apply_chat_template(messages_1, tokenize=False, add_generation_prompt=True)
+    prompt_text_1 = tokenizer.apply_chat_template(
+        messages_1, tokenize=False, add_generation_prompt=True
+    )
     prompt_ids_1 = tokenizer.encode(prompt_text_1)
 
     print(f"      Total prompt length: {len(prompt_ids_1)} tokens")
@@ -112,7 +118,9 @@ def main():
     gen_text_1 = tokenizer.decode(generated_tokens_1, skip_special_tokens=True)
 
     print(f"      TTFT (Time To First Token): {ttft_ms:.1f} ms")
-    print(f"      Generated {len(generated_tokens_1)} tokens in {turn1_time:.1f} ms ({len(generated_tokens_1) / (turn1_time / 1000):.1f} tok/s)")
+    print(
+        f"      Generated {len(generated_tokens_1)} tokens in {turn1_time:.1f} ms ({len(generated_tokens_1) / (turn1_time / 1000):.1f} tok/s)"
+    )
     print("\n--- Model Output (Turn 1) ---")
     print(gen_text_1.strip())
     print("-----------------------------")
@@ -124,7 +132,9 @@ def main():
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_query_2},
     ]
-    prompt_text_2 = tokenizer.apply_chat_template(messages_2, tokenize=False, add_generation_prompt=True)
+    prompt_text_2 = tokenizer.apply_chat_template(
+        messages_2, tokenize=False, add_generation_prompt=True
+    )
     prompt_ids_2 = tokenizer.encode(prompt_text_2)
 
     engine.add_request(prompt_ids_2, max_tokens=40, request_id="turn-2")
