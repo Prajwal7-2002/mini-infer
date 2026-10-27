@@ -74,6 +74,7 @@ Most practitioners know how to *call* an inference engine (`ollama run` or `vllm
 | **Batching Strategy** | Naive request batching (waiting for slowest request to finish) | **Continuous Iteration Batching**: Dynamic token-level scheduling |
 | **Generation Speed** | Sequential auto-regressive generation ($1$ token per step) | **Speculative Decoding**: $K$-token draft proposals with parallel target verification |
 | **Model Architecture** | Black-box weights | **Pure Qwen2.5 safetensors loader**: Custom RMSNorm, RoPE, and SDPA |
+| **Weight Quantization (v0.2.6)** | Monolithic FP16 tensors exhausting consumer VRAM | **Sub-Byte QuantLinear (`quantbench-engine`)**: Vectorized INT4 nibble packing (~3.7× compression), INT8 absmax, BitNet ternary, and Ampere 2:4 sparsity |
 
 ---
 
