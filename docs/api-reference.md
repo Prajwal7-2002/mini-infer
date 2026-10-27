@@ -24,13 +24,15 @@ mini-infer serve [OPTIONS]
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--model` | `TEXT` | `Qwen/Qwen2.5-0.5B-Instruct` | Target model name or local path |
-| `--host` | `TEXT` | `127.0.0.1` | Network interface to bind to |
-| `--port` | `INT` | `8000` | Port to listen on |
+| `--model`, `-m` | `TEXT` | `Qwen/Qwen2.5-0.5B-Instruct` | Target model name or local path |
+| `--host`, `-h` | `TEXT` | `127.0.0.1` | Network interface to bind to |
+| `--port`, `-p` | `INT` | `8000` | Port to listen on |
 | `--num-blocks` | `INT` | `1024` | Number of physical Paged KV blocks |
 | `--block-size` | `INT` | `16` | Token capacity per physical KV block |
 | `--device` | `TEXT` | `auto` | Compute device (`cuda`, `cpu`, or `auto`) |
 | `--kv-cache-dtype` | `TEXT` | `auto` | KV-cache precision: `auto` or `int8` (50% memory saving) |
+| `--quant`, `-q` | `TEXT` | `None` | Sub-byte weight quantization: `int4`, `int8`, `ternary`, `sparse24` (via `quantbench-engine`) |
+| `--group-size` | `INT` | `64` | Block size for blockwise quantization (default: 64) |
 
 ---
 
@@ -72,6 +74,8 @@ mini-infer chat [OPTIONS]
 | `--max-tokens` | `INT` | `256` | Maximum generation tokens per reply |
 | `--device` | `TEXT` | `auto` | Compute device (`cuda`, `cpu`, or `auto`) |
 | `--kv-cache-dtype` | `TEXT` | `int8` | KV-cache precision: `auto` or `int8` |
+| `--quant`, `-q` | `TEXT` | `None` | Sub-byte weight quantization: `int4`, `int8`, `ternary`, `sparse24` (via `quantbench-engine`) |
+| `--group-size` | `INT` | `64` | Block size for blockwise quantization (default: 64) |
 
 ---
 

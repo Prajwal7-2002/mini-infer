@@ -29,19 +29,20 @@ uv sync
 ```
 
 > [!TIP]
-> mini-infer requires **no C++ compilers or CMake**. It runs entirely using standard PyTorch wheels!
+> **Running Commands with `uv`**:
+> When developing from source or within a virtual environment, prefix commands with `uv run` (e.g. `uv run mini-infer info`), or activate the virtual environment first (`.venv\Scripts\activate` on Windows or `source .venv/bin/activate` on Linux/macOS).
 
 ---
 
 ## 2. Check Hardware Diagnostics
 
-Run the CLI diagnostic tool to verify CUDA availability, detect your GPU, and display the automated VRAM allocation plan:
+Run the CLI diagnostic tool to verify CUDA availability, detect your GPU, and display the automated VRAM allocation plan and quantization footprint matrix powered by [`quantbench-engine`](https://pypi.org/project/quantbench-engine/):
 
 ```bash
-mini-infer info
+uv run mini-infer info
 ```
 
-Example output on a laptop GPU:
+Example output on an entry-level laptop GPU (RTX 3050 6GB):
 ```text
 mini-infer System Diagnostics
 PyTorch version: 2.6.0+cu124
@@ -49,11 +50,16 @@ CUDA available: True
 GPU Device: NVIDIA GeForce RTX 3050 6GB Laptop GPU
 Total VRAM: 6.00 GB
 
-Memory Allocation Plan (RTX 3050 6 GB):
-  • Qwen2.5-1.5B (Target Model): ~3.0 GB VRAM
-  • Qwen2.5-0.5B (Draft Model):  ~1.0 GB VRAM
-  • Paged KV-Cache Memory Pool:  ~1.5 GB VRAM (~2,000 blocks)
-  • Safety Buffer:               ~0.5 GB
+          Model Footprint by Quantization Scheme (quantbench-engine)           
++-----------------------------------------------------------------------------+
+| Scheme        |   Precision   | Qwen2.5-0.5B | Qwen2.5-1.5B | Max KV Blocks |
+|---------------+---------------+--------------+--------------+---------------|
+| FP16 (Dense)  | 16-bit Float  |      0.98 GB |      3.08 GB | ~1,800 blocks |
+| INT8 Absmax   | 8-bit Signed  |      0.51 GB |      1.58 GB | ~3,200 blocks |
+| INT4 Packed   | 4-bit Nibble  |      0.28 GB |      0.84 GB | ~4,800 blocks |
+| BitNet Ternary|   1.58-bit    |      0.16 GB |      0.48 GB | ~5,600 blocks |
+| Ampere 2:4    | 50% Structured|      0.54 GB |      1.65 GB | ~3,100 blocks |
++-----------------------------------------------------------------------------+
 ```
 
 ---
@@ -64,7 +70,7 @@ Before querying an LLM about your code, extract an AST skeleton (classes, method
 
 ```bash
 # Generate a ~1000-token repository skeleton
-mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
+uv run mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
 ```
 
 See [Coding on Large Codebases](guides/coding-projects.md) for full details.
@@ -73,21 +79,23 @@ See [Coding on Large Codebases](guides/coding-projects.md) for full details.
 
 ## 4. Launching the Serving Engine
 
-Start an OpenAI-compatible HTTP inference server. Pass `--kv-cache-dtype int8` to cut KV cache memory by 48.4%:
+Start an OpenAI-compatible HTTP inference server. Pass `--quant int4` to compress weights by ~3.7× and `--kv-cache-dtype int8` to double KV cache capacity:
 
-### Standard Serving with INT8 KV-Cache
+### Option A: Sub-Byte INT4 Quantized Serving (Recommended for 6 GB GPUs)
 ```bash
-mini-infer serve \
-  --model Qwen/Qwen2.5-Coder-1.5B-Instruct \
+uv run mini-infer serve \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --quant int4 \
+  --group-size 64 \
   --kv-cache-dtype int8 \
   --port 8000
 ```
 
-### Speculative Decoding (1.5B Target + 0.5B Draft)
+### Option B: Standard Serving with INT8 KV-Cache
 ```bash
-mini-infer serve \
-  --target Qwen/Qwen2.5-1.5B-Instruct \
-  --draft Qwen/Qwen2.5-0.5B-Instruct \
+uv run mini-infer serve \
+  --model Qwen/Qwen2.5-0.5B-Instruct \
+  --kv-cache-dtype int8 \
   --port 8000
 ```
 
