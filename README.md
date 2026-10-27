@@ -213,10 +213,13 @@ mini-infer repomap ./src --max-tokens 1000 -o repo_context.md
 ### Option A: Fastest Zero-Config Way (`mini-infer chat`)
 If you want to immediately ask questions about your code without configuring VS Code or API keys:
 ```bash
-# In any project directory:
-mini-infer chat -c ./src
+# In any project directory (with repo context and persistent Agent Memory active):
+mini-infer chat -c ./src --memory
 ```
-It extracts the AST skeleton, starts the model with INT8 KV-cache, and lets you chat directly in your terminal!
+It extracts the AST skeleton, starts the model with INT8 KV-cache, dynamically retrieves relevant persistent memories, and lets you chat directly in your terminal!
+* Use `/remember <fact>` to instantly store permanent developer preferences or constraints.
+* Use `/memory` to inspect all stored facts.
+* Toggle with `--memory` / `--no-memory`.
 
 ---
 
@@ -337,6 +340,25 @@ To code on large repositories without exceeding context limits or losing context
 mini-infer repomap . --max-tokens 1500 --output repomap.md
 ```
 Combined with `mini-infer`'s radix prefix caching, this skeleton stays warm in GPU memory across queries, enabling surgical code assistance on massive repositories with sub-15ms TTFT.
+
+### 10. Embedded Agent Cognitive Memory Engine (v0.2.7)
+Prevent context window bloat and eliminate external vector DB dependencies with zero-dependency long-term cognitive storage:
+* **Embedded SQLite WAL**: Pure Python standard library SQLite with Write-Ahead Logging (`.mini_infer/memory.db`) ensures ACID safety with zero background daemon overhead.
+* **Hybrid Semantic + Lexical Retrieval**: Combines deterministic 256-dimensional subword character-trigram feature embeddings ($<0.2\text{ ms}$ on CPU) with Okapi BM25 keyword ranking for exact code identifiers.
+* **4-Tier Cognitive Hierarchy**: Differentiates `CORE` rules (permanent, never decayed) from `PROJECT`, `DECISION`, and `EPISODIC` context with frequency-reinforced exponential half-life decay ($t_{1/2} = 14$ days).
+* **CLI Memory Management**: Full terminal CRUD suite via `mini-infer memory add/list/search/stats/consolidate/clear`.
+* Full architecture and mathematical formulation: see [Agent Cognitive Memory Documentation](https://prajwal7-2002.github.io/mini-infer/architecture/agent-memory/).
+
+```bash
+# Store a permanent core preference
+mini-infer memory add "RTX 3050 has 6GB VRAM; use INT4 quantization" --category core
+
+# Search memories across semantic & keyword boundaries
+mini-infer memory search "quantization setup"
+
+# Prune decayed episodic items while preserving core rules
+mini-infer memory consolidate
+```
 
 ---
 

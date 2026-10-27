@@ -41,6 +41,7 @@ nav:
       - Speculative Decoding: architecture/speculative-decoding.md
       - Continuous Batching: architecture/continuous-batching.md
       - Sub-Byte Quantization: architecture/quantization.md
+      - Agent Cognitive Memory: architecture/agent-memory.md
   - Serving & API: api-reference.md
   - Benchmarks: benchmarks.md
   - Contributing: contributing.md
