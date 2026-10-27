@@ -76,6 +76,43 @@ mini-infer chat [OPTIONS]
 | `--kv-cache-dtype` | `TEXT` | `int8` | KV-cache precision: `auto` or `int8` |
 | `--quant`, `-q` | `TEXT` | `None` | Sub-byte weight quantization: `int4`, `int8`, `ternary`, `sparse24` (via `quantbench-engine`) |
 | `--group-size` | `INT` | `64` | Block size for blockwise quantization (default: 64) |
+| `--memory / --no-memory` | `BOOL` | `True` | Enable persistent Agent Memory recall across turns and sessions |
+
+---
+
+### 5. `mini-infer memory`
+Manage persistent Agent Memory (facts, preferences, decisions, and episodic context).
+
+```bash
+mini-infer memory [COMMAND] [OPTIONS]
+```
+
+**Commands:**
+
+* **`add`**: Add a verified cognitive fact.
+  ```bash
+  mini-infer memory add "RTX 3050 has 6GB VRAM" --category core --importance 1.5
+  ```
+* **`list`**: View stored memories with decay and access metrics.
+  ```bash
+  mini-infer memory list [--category <core|project|decision|episodic>] [--limit 25]
+  ```
+* **`search`**: Query memories using hybrid BM25 + dense subword feature ranking.
+  ```bash
+  mini-infer memory search "quantization" [--top-k 5] [--threshold 0.10]
+  ```
+* **`stats`**: Display storage footprint, SQLite path, and category distribution.
+  ```bash
+  mini-infer memory stats
+  ```
+* **`consolidate`**: Run cognitive garbage collection, pruning decayed items while preserving core rules.
+  ```bash
+  mini-infer memory consolidate [--max-items 500]
+  ```
+* **`clear`**: Purge persistent memories from database.
+  ```bash
+  mini-infer memory clear [--category <cat>] [--force]
+  ```
 
 ---
 

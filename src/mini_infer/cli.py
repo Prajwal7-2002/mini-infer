@@ -140,14 +140,20 @@ def chat(
     group_size: int = typer.Option(
         64, "--group-size", help="Block size for blockwise quantization (default: 64)"
     ),
+    memory: bool = typer.Option(
+        True,
+        "--memory/--no-memory",
+        help="Enable persistent Agent Memory recall across turns and sessions",
+    ),
 ):
-    """Interactive terminal coding chat with automatic codebase context and prefix caching."""
+    """Interactive terminal coding chat with automatic codebase context, prefix caching, and agent memory."""
     from pathlib import Path
 
     import torch
     from transformers import AutoTokenizer
 
     from mini_infer.engine import InferenceEngine
+    from mini_infer.memory import MemoryEngine
     from mini_infer.models.loader import load_model_from_safetensors
     from mini_infer.repomap import build_repo_map, estimate_tokens
 
@@ -157,10 +163,19 @@ def chat(
         else ("cpu" if device == "auto" else device)
     )
     quant_info = f", quant={quant.upper()}" if quant else ""
+    mem_info = ", memory=active" if memory else ""
 
     console.print(
-        f"[bold cyan]mini-infer interactive chat[/bold cyan] ({selected_device}, kv={kv_cache_dtype}{quant_info})"
+        f"[bold cyan]mini-infer interactive chat[/bold cyan] ({selected_device}, kv={kv_cache_dtype}{quant_info}{mem_info})"
     )
+
+    # Initialize Agent Memory Engine
+    memory_engine = MemoryEngine() if memory else None
+    if memory_engine:
+        mem_stats = memory_engine.get_stats()
+        console.print(
+            f"[dim][Memory] Persistent facts loaded: {mem_stats['total_memories']} ({mem_stats['db_size_kb']} KB)[/dim]"
+        )
 
     context_str = ""
     if context:
@@ -197,25 +212,14 @@ def chat(
         enable_prefix_caching=True,
     )
 
-    messages = []
-    if context_str:
-        messages.append(
-            {
-                "role": "system",
-                "content": f"You are an expert AI software engineer. You have access to this codebase outline:\n\n{context_str}\n\nProvide clean, production-ready code with concise explanations.",
-            }
-        )
-    else:
-        messages.append(
-            {
-                "role": "system",
-                "content": "You are an expert AI software engineer. Provide clean, production-ready code.",
-            }
-        )
-
     console.print(
-        "\n[bold green]Chat ready![/bold green] Ask any question about your codebase (type 'exit' or 'quit' to stop).\n"
+        "\n[bold green]Chat ready![/bold green] Ask any question about your codebase (type '/remember <fact>', '/memory', 'exit' to stop).\n"
     )
+
+    messages = []
+    base_system = "You are an expert AI software engineer. Provide clean, production-ready code with concise explanations."
+    if context_str:
+        base_system += f"\n\nYou have access to this codebase outline:\n\n{context_str}"
 
     req_idx = 0
     while True:
@@ -228,9 +232,41 @@ def chat(
         if not user_input.strip():
             continue
 
+        # In-chat memory management shortcuts
+        if user_input.startswith("/remember "):
+            fact = user_input[len("/remember ") :].strip()
+            if memory_engine and fact:
+                item = memory_engine.add(fact, category="core", importance=1.5)
+                console.print(
+                    f"[bold green][Memorized] ({item.category.value}):[/bold green] {item.content}\n"
+                )
+            continue
+
+        if user_input.strip() == "/memory":
+            if memory_engine:
+                all_m = memory_engine.store.list_all()
+                console.print(f"\n[bold cyan]Persistent Memories ({len(all_m)} items):[/bold cyan]")
+                for m in all_m[:10]:
+                    console.print(f"  - [{m.category.value}] {m.content}")
+                console.print()
+            continue
+
+        # Construct system prompt with dynamic memory injection
+        active_system = base_system
+        if memory_engine:
+            mem_block = memory_engine.format_prompt_context(user_input, max_tokens=250)
+            if mem_block:
+                active_system = f"{base_system}\n{mem_block}"
+
         messages.append({"role": "user", "content": user_input})
+
+        # Inject updated system prompt as first message
+        chat_payload = [{"role": "system", "content": active_system}] + [
+            m for m in messages if m["role"] != "system"
+        ]
+
         prompt_text = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
+            chat_payload, tokenize=False, add_generation_prompt=True
         )
         prompt_ids = tokenizer.encode(prompt_text)
 
@@ -288,6 +324,190 @@ def info():
     table.add_row("Ampere 2:4 Sparse", "50% Structured", "0.54 GB", "1.65 GB", "~3,100 blocks")
     console.print()
     console.print(table)
+
+
+# ==============================================================================
+# Agent Memory Subcommands
+# ==============================================================================
+memory_app = typer.Typer(
+    name="memory",
+    help="Manage persistent Agent Memory (facts, preferences, decisions, and episodic context).",
+    no_args_is_help=True,
+)
+
+
+@memory_app.command("add")
+def memory_add(
+    content: str = typer.Argument(..., help="Memory content or fact to store"),
+    category: str = typer.Option(
+        "project", "--category", "-c", help="Category: core, project, decision, episodic"
+    ),
+    importance: float = typer.Option(
+        1.0, "--importance", "-i", help="Importance weight (0.1 to 2.0)"
+    ),
+):
+    """Add a verified fact or cognitive memory."""
+    from mini_infer.memory import MemoryCategory, MemoryEngine
+
+    engine = MemoryEngine()
+    try:
+        cat = MemoryCategory(category.lower())
+    except ValueError:
+        console.print(
+            f"[bold red]Error:[/bold red] Invalid category '{category}'. Choose from: core, project, decision, episodic."
+        )
+        raise typer.Exit(1) from None
+
+    item = engine.add(content, category=cat, importance=importance)
+    console.print(
+        f"[bold green][Memory Stored]:[/bold green] [{item.category.value}] {item.content} (id: {item.id})"
+    )
+
+
+@memory_app.command("list")
+def memory_list(
+    category: str | None = typer.Option(
+        None, "--category", "-c", help="Filter by category (core, project, decision, episodic)"
+    ),
+    limit: int = typer.Option(25, "--limit", "-n", help="Maximum items to display"),
+):
+    """List persistent agent memories."""
+    from rich.table import Table
+
+    from mini_infer.memory import MemoryCategory, MemoryEngine
+
+    engine = MemoryEngine()
+    cat_filter = None
+    if category:
+        try:
+            cat_filter = MemoryCategory(category.lower())
+        except ValueError:
+            console.print(f"[bold red]Error:[/bold red] Invalid category '{category}'.")
+            raise typer.Exit(1) from None
+
+    items = engine.store.list_all(category=cat_filter)[:limit]
+    if not items:
+        console.print("[dim]No memories found in store.[/dim]")
+        return
+
+    table = Table(title=f"Persistent Agent Memories ({len(items)} items)", header_style="bold cyan")
+    table.add_column("ID", style="dim", justify="left")
+    table.add_column("Category", style="magenta", justify="center")
+    table.add_column("Content", style="green", justify="left")
+    table.add_column("Imp", justify="center")
+    table.add_column("Hits", justify="center")
+    table.add_column("Decay", justify="right")
+
+    for item in items:
+        decay = item.compute_decay()
+        table.add_row(
+            item.id,
+            item.category.value,
+            item.content,
+            f"{item.importance:.1f}",
+            str(item.access_count),
+            f"{decay:.2f}",
+        )
+
+    console.print(table)
+
+
+@memory_app.command("search")
+def memory_search(
+    query: str = typer.Argument(..., help="Query or phrase to retrieve memories for"),
+    top_k: int = typer.Option(5, "--top-k", "-k", help="Number of results to return"),
+    threshold: float = typer.Option(0.10, "--threshold", "-t", help="Minimum relevance threshold"),
+):
+    """Search agent memories using hybrid BM25 + dense subword feature ranking."""
+    from rich.table import Table
+
+    from mini_infer.memory import MemoryEngine
+
+    engine = MemoryEngine()
+    results = engine.search(query, top_k=top_k, threshold=threshold)
+    if not results:
+        console.print(f"[yellow]No matching memories found for query: '{query}'[/yellow]")
+        return
+
+    table = Table(title=f"Hybrid Memory Search: '{query}'", header_style="bold green")
+    table.add_column("Score", style="bold yellow", justify="right")
+    table.add_column("Category", style="magenta", justify="center")
+    table.add_column("Content", style="cyan", justify="left")
+    table.add_column("Accesses", justify="center")
+
+    for item, score in results:
+        table.add_row(
+            f"{score:.4f}",
+            item.category.value,
+            item.content,
+            str(item.access_count),
+        )
+
+    console.print(table)
+
+
+@memory_app.command("stats")
+def memory_stats():
+    """Display memory database size, category distribution, and storage path."""
+    from rich.table import Table
+
+    from mini_infer.memory import MemoryEngine
+
+    engine = MemoryEngine()
+    stats = engine.get_stats()
+
+    console.print("[bold cyan]Agent Memory Engine Telemetry[/bold cyan]")
+    console.print(f"Store Path: [yellow]{stats['db_path']}[/yellow]")
+    console.print(f"Database Size: [bold green]{stats['db_size_kb']} KB[/bold green]")
+    console.print(f"Total Memories: [bold]{stats['total_memories']}[/bold]\n")
+
+    table = Table(title="Memory Distribution by Category", header_style="bold magenta")
+    table.add_column("Category", style="cyan")
+    table.add_column("Count", justify="right", style="green")
+
+    for cat, count in stats["by_category"].items():
+        table.add_row(cat.capitalize(), str(count))
+
+    console.print(table)
+
+
+@memory_app.command("clear")
+def memory_clear(
+    category: str | None = typer.Option(
+        None, "--category", "-c", help="Category to purge (omit to clear entire memory)"
+    ),
+    force: bool = typer.Option(False, "--force", "-f", help="Bypass confirmation prompt"),
+):
+    """Purge memories from persistent storage."""
+    from mini_infer.memory import MemoryEngine
+
+    engine = MemoryEngine()
+    target = f"category '{category}'" if category else "ALL persistent memories"
+    if not force:
+        confirm = typer.confirm(f"Are you sure you want to permanently clear {target}?")
+        if not confirm:
+            console.print("[dim]Aborted.[/dim]")
+            return
+
+    purged = engine.clear(category=category)
+    console.print(f"[bold red]Purged {purged} memory item(s).[/bold red]")
+
+
+@memory_app.command("consolidate")
+def memory_consolidate(
+    max_items: int = typer.Option(500, "--max-items", help="Maximum memories to retain"),
+):
+    """Run cognitive garbage collection, pruning decayed episodic items while preserving core rules."""
+    from mini_infer.memory import MemoryEngine
+
+    engine = MemoryEngine()
+    pruned = engine.consolidate(max_items=max_items)
+    console.print(
+        f"[bold green]Consolidation complete:[/bold green] pruned {pruned} decayed item(s)."
+    )
+
+
+app.add_typer(memory_app, name="memory")
 
 
 if __name__ == "__main__":

@@ -17,3 +17,9 @@ checkpoints/
 # Personal study notes, not part of the repo
 decisions.md
 flow.md
+
+# Agent Memory local SQLite databases
+.mini_infer/
+*.db
+*.db-wal
+*.db-shm
