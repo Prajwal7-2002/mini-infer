@@ -41,6 +41,20 @@ def serve(
     from mini_infer.engine import InferenceEngine
     from mini_infer.models.loader import load_model_from_safetensors
 
+    valid_quants = ("int4", "int8", "ternary", "sparse24")
+    if quant and quant.lower() not in valid_quants:
+        console.print(
+            f"[bold red]Error:[/bold red] Unsupported quantization scheme '{quant}'. Choose from: {', '.join(valid_quants)}."
+        )
+        raise typer.Exit(1)
+
+    valid_kv_cache = ("auto", "int8")
+    if kv_cache_dtype and kv_cache_dtype.lower() not in valid_kv_cache:
+        console.print(
+            f"[bold red]Error:[/bold red] Unsupported kv-cache-dtype '{kv_cache_dtype}'. Choose from: {', '.join(valid_kv_cache)}."
+        )
+        raise typer.Exit(1)
+
     selected_device = (
         "cuda"
         if (device == "auto" and torch.cuda.is_available())
@@ -156,6 +170,20 @@ def chat(
     from mini_infer.memory import MemoryEngine
     from mini_infer.models.loader import load_model_from_safetensors
     from mini_infer.repomap import build_repo_map, estimate_tokens
+
+    valid_quants = ("int4", "int8", "ternary", "sparse24")
+    if quant and quant.lower() not in valid_quants:
+        console.print(
+            f"[bold red]Error:[/bold red] Unsupported quantization scheme '{quant}'. Choose from: {', '.join(valid_quants)}."
+        )
+        raise typer.Exit(1)
+
+    valid_kv_cache = ("auto", "int8")
+    if kv_cache_dtype and kv_cache_dtype.lower() not in valid_kv_cache:
+        console.print(
+            f"[bold red]Error:[/bold red] Unsupported kv-cache-dtype '{kv_cache_dtype}'. Choose from: {', '.join(valid_kv_cache)}."
+        )
+        raise typer.Exit(1)
 
     selected_device = (
         "cuda"
