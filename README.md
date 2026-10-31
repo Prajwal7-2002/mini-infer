@@ -21,7 +21,7 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 
 > [!IMPORTANT]
 > **Our Mission**: *Safe, secure, and optimized for every machine.*  
-> We believe high-performance LLM systems should not require $10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
+> We believe high-performance LLM systems should not require \$10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
 
 ---
 
@@ -413,7 +413,7 @@ Evaluated live on **NVIDIA GeForce RTX 3050 6GB Laptop GPU** using zero-overhead
 
 ---
 
-## 🤖 Powering Autonomous Coding Agents ($0 Cost, 100% Private)
+## 🤖 Powering Autonomous Coding Agents (\$0 Cost, 100% Private)
 
 Because `mini-infer` implements an OpenAI-compatible `/v1/chat/completions` streaming API, it serves as a high-throughput, zero-cost backend for local AI and coding agents:
 
