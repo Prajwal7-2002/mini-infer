@@ -24,7 +24,7 @@ Most practitioners know how to *call* an inference engine (`ollama run` or `vllm
 **mini-infer** implements these exact production algorithms in **pure, readable, testable Python/PyTorch**. It runs on consumer hardware (such as an entry-level 6 GB laptop GPU or a free Kaggle T4), with **zero C++ compiler or CMake toolchain required**.
 
 !!! info "Our Mission: Safe, Secure, and Optimized for Every Machine"
-    We believe high-performance LLM systems should not require $10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
+    We believe high-performance LLM systems should not require \$10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
 
 ---
 
