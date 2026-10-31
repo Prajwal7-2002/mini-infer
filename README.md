@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/banner.svg" alt="mini-infer banner" width="100%">
+</p>
+
 # mini-infer 🚀
 
 [![PyPI version](https://img.shields.io/pypi/v/mini-infer.svg?cacheSeconds=300)](https://pypi.org/project/mini-infer/)
