@@ -65,6 +65,8 @@ def serve(
         f"[bold cyan]mini-infer[/bold cyan] serving [bold green]{model}[/bold green] on [yellow]{host}:{port}[/yellow] ({selected_device}) [kv_cache={kv_cache_dtype}{quant_info}]"
     )
 
+    server.model_name = model
+
     # Load tokenizer
     console.print("Loading tokenizer...")
     try:

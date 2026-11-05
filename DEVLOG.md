@@ -80,3 +80,12 @@ matched the Hugging Face reference for 0/40 tokens and ignored the system prompt
 - **Benchmark** (servebench, RTX 3050 laptop, 0.5B bf16): 24/24 requests at c=1/2/4; 8.5 / 15.3 / 26.4 tok/s.
   The GPU is ~32% busy at ~810 MHz: mini-infer is CPU-bound (Python dispatch of per-layer paged-KV gathers),
   so results vary with the laptop's power state (14.9 tok/s at c=1 in an earlier run).
+
+## 2026-11-05: v0.2.10 - Server reports the model it actually serves
+
+- `/v1/models` was hard-coded to `qwen2.5-0.5b` / `Qwen/Qwen2.5-0.5B-Instruct`, so a server started with
+  `--model Qwen/Qwen2.5-1.5B-Instruct` still claimed to serve 0.5B. Benchmark clients (servebench) record
+  this, so results could be filed under the wrong model. It now lists the served model and its short alias
+  (`qwen2.5-1.5b`).
+- `/health` now reports `version` and `model` (servebench showed the version as unknown).
+- Tests: `tests/test_server_endpoints.py` (fails on the old code). 51 tests.
