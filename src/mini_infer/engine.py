@@ -113,19 +113,27 @@ class InferenceEngine:
                 cached_blocks, num_cached = self.prefix_cache.match_prefix(
                     input_tokens, self.block_pool
                 )
+                # At least one prompt token must be recomputed to produce logits for the
+                # first output token. If the whole prompt is cached, hand back the last
+                # block and recompute it into a private block, so shared blocks are
+                # never written to.
+                if num_cached >= len(input_tokens) and cached_blocks:
+                    self.block_pool.free_block(cached_blocks.pop())
+                    num_cached -= self.block_size
                 if num_cached > 0:
                     seq.block_table.physical_block_ids.extend(cached_blocks)
                     seq.block_table.num_tokens = num_cached
                     seq.prompt_tokens_processed = num_cached
+                    # The suffix must attend to the cached prefix: load its KV so the
+                    # model sees the full context and computes correct positions.
+                    seq.past_key_values = [
+                        self.block_pool.read_sequence_kv(layer_idx, cached_blocks, num_cached)
+                        for layer_idx in range(self.config.num_hidden_layers)
+                    ]
 
-            # Determine next slice of tokens to process
-            remaining_tokens = input_tokens[seq.prompt_tokens_processed :]
-            if not remaining_tokens:
-                # Fully cached prompt
-                chunk_tokens = [input_tokens[-1]]
-                seq.block_table.num_tokens -= 1
-            else:
-                chunk_tokens = remaining_tokens[: self.chunked_prefill_size]
+            # Next slice of prompt tokens to process
+            chunk_start = seq.prompt_tokens_processed
+            chunk_tokens = input_tokens[chunk_start : chunk_start + self.chunked_prefill_size]
 
             # Allocate block slots for chunk tokens
             for _ in chunk_tokens:
@@ -137,21 +145,24 @@ class InferenceEngine:
                 logits, past_kv = self.model(input_tensor, past_key_values=seq.past_key_values)
             seq.past_key_values = past_kv
 
-            # Synchronize prefilled KV states into physical BlockPool
+            # Write only this chunk's new KV into the paged pool; earlier tokens (including
+            # shared prefix-cache blocks) are already there and must not be overwritten.
             if past_kv is not None:
                 for layer_idx, (k_layer, v_layer) in enumerate(past_kv):
                     self.block_pool.write_sequence_kv(
                         layer_idx=layer_idx,
                         physical_block_ids=seq.block_table.physical_block_ids,
-                        start_token_idx=0,
-                        k_seq=k_layer[0],
-                        v_seq=v_layer[0],
+                        start_token_idx=chunk_start,
+                        k_seq=k_layer[0, :, chunk_start:, :],
+                        v_seq=v_layer[0, :, chunk_start:, :],
                     )
 
             seq.prompt_tokens_processed += len(chunk_tokens)
 
             # If prefill just completed, sample the first output token
             if seq.is_prefill_complete:
+                # Decode reads KV from the paged pool; drop the contiguous copy.
+                seq.past_key_values = None
                 next_token = sample_next_token(
                     logits[:, -1, :],
                     temperature=seq.temperature,

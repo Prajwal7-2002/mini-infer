@@ -36,3 +36,32 @@
 - **Memory Pressure Preemption**: Implemented graceful sequence preemption in `ContinuousScheduler`. When the physical block pool exhausts under load, the engine preempts the newest sequence, frees its blocks to let older requests complete, and resumes it without crashing.
 - **Expanded Test Matrix**: Added `tests/test_engine.py` and test cases for chunked prefill, preemption, and paged read/write. 18/18 tests passing.
 
+## 2026-11-05: v0.2.8 - Prefix cache correctness fix and honest TTFT numbers
+
+An independent re-run found that a prefix-cache hit produced wrong output: with the cache on, Qwen2.5-0.5B
+matched the Hugging Face reference for 0/40 tokens and ignored the system prompt.
+
+- **Root causes** (`engine.py`): on a hit the suffix was prefilled with `past_key_values=None`, so it never
+  attended to the cached prefix and its RoPE positions restarted at 0; then `write_sequence_kv(start_token_idx=0)`
+  wrote the suffix KV over the shared cached blocks, corrupting later hits.
+- **Fix**: load the cached blocks' KV as attention history; write only the new chunk at its real offset;
+  if the whole prompt is cached, release the last block and recompute it privately; drop the contiguous
+  KV copy after prefill (it duplicated the paged cache for the whole request).
+- **Speed**: `BlockPool.write_sequence_kv` now does one indexed scatter per layer instead of a Python loop per
+  token. Cold TTFT for an ~880-token prompt went from 2,264 ms to ~270 ms (measured in the same session).
+- **Tests**: `tests/test_prefix_cache_correctness.py` compares the paged KV after a hit with a full forward
+  pass, layer by layer (bf16/int8 KV, chunked and unchunked, fully cached prompt, re-run after other hits).
+  It fails 4/5 on the old code. The earlier tests passed because a tiny random model just repeats the last
+  token, so they could not see the bug.
+- **Benchmark** (`scripts/bench_prefix_cache.py`, warmed up, median of 5, RTX 3050, Qwen2.5-0.5B bf16):
+
+  | Prompt | No prefix cache | Cache hit | Speedup |
+  | :--- | ---: | ---: | ---: |
+  | ~935 tokens | 143 ms | 66 ms | 2.2× |
+  | ~3,040 tokens | 480 ms | 68 ms | 7.0× |
+
+  fp32: identical greedy output in 5/5 runs; mini-infer fp32 logits equal Hugging Face's exactly (max diff 0.0).
+- **README**: removed the "29.7×", "38-70×", "< 15 ms" and "up to 80%" claims. The 29.7× compared an
+  un-warmed first request (CUDA start-up) with a warm second one, on the broken cache. `test_real_repo.py`
+  now warms up first.
+

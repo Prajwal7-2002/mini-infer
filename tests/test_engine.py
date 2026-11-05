@@ -10,6 +10,7 @@ def create_toy_engine(
     max_batch_size: int = 4,
     chunked_prefill_size: int = 16,
     kv_cache_dtype: str = "auto",
+    enable_prefix_caching: bool = True,
 ) -> InferenceEngine:
     torch.manual_seed(42)
     cfg = Qwen2Config(
@@ -32,7 +33,7 @@ def create_toy_engine(
         block_size=16,
         max_batch_size=max_batch_size,
         chunked_prefill_size=chunked_prefill_size,
-        enable_prefix_caching=True,
+        enable_prefix_caching=enable_prefix_caching,
         device=torch.device("cpu"),
         kv_cache_dtype=kv_cache_dtype,
     )

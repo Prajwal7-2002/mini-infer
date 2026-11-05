@@ -264,14 +264,29 @@ You do **not** need to manually copy-paste file contents or type `@filename.py`:
 
 ### Why This Works on a Laptop GPU:
 * **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.
-* **Radix Prefix Caching**: The 1,000-token repository skeleton stays resident in GPU memory across turns. Follow-up prompts skip prefill and start responding in **~0.5s – 1.0s (38× – 70× faster)**.
+* **Radix Prefix Caching**: The 1,000-token repository skeleton stays resident in GPU memory across turns. Follow-up prompts reuse the cached prefix, so only the new question is prefilled (see measured numbers below).
 
 ### 🔬 Real-World Empirical Proof: Synthesizing Code for [EdgeSLM](https://github.com/Prajwal7-2002/EdgeSLM)
 Evaluated on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running against `EdgeSLM/src` (15 subdirectories):
 * **AST Parsing**: Parsed entire repository in **82.38 ms** into a **961-token** typed skeleton.
 * **KV-Cache Footprint**: 8,192 token pool compressed from **96.00 MB down to 49.50 MB (-48.4%)**.
-* **Turn 1 (Cold Ingestion of 953-tok prompt)**: TTFT was **23.5 seconds** (synthesized a new `/metrics` endpoint for `api/app.py`).
-* **Turn 2 (Prefix-Cached Unit Test Generation)**: TTFT dropped to **793.1 ms** (**29.7× faster Time-To-First-Token!**).
+* **Prefix-cache TTFT (measured, warmed up, median of 5, Qwen2.5-0.5B bf16)**:
+
+  | Prompt | No prefix cache | Prefix-cache hit | Speedup |
+  | :--- | ---: | ---: | ---: |
+  | ~935 tokens | 143 ms | 66 ms | 2.2× |
+  | ~3,040 tokens | 480 ms | 68 ms | 7.0× |
+
+  The gain grows with the length of the shared prefix. In `float32`, cached and uncached runs produce identical greedy tokens (5/5); in `bfloat16` they can differ after a few tokens because the attention is split differently and rounding changes near-ties.
+
+  > Earlier versions of this README claimed "29.7× faster TTFT". That number compared an un-warmed first request (CUDA start-up included) with a warm second one, and the prefix cache in those versions produced wrong output on a hit. Both were fixed in v0.2.8.
+
+```bash
+# Reproduce the prefix-cache numbers:
+uv run python scripts/bench_prefix_cache.py --prefix-tokens 900
+uv run python scripts/bench_prefix_cache.py --prefix-tokens 3000
+uv run python scripts/bench_prefix_cache.py --dtype float32   # exact-output check
+```
 
 ```bash
 # Run the live real-world verification script yourself:
@@ -297,7 +312,7 @@ Traditional batching evaluates all requests together until the longest one compl
 ### 3. Hash-Based Radix Prefix Caching
 Repeated system prompts (e.g., `"You are a helpful coding assistant..."`) waste significant compute in redundant prefill passes.
 * Completed 16-token blocks are cryptographically hashed and indexed in a prefix cache table.
-* Incoming requests sharing common prefixes match these block hashes and bypass prefill entirely, reducing **Time-to-First-Token (TTFT) by up to 80%**.
+* Incoming requests sharing common prefixes match these block hashes and skip prefill for those blocks; only the uncached suffix is computed. Measured TTFT drops 2.2× for a ~935-token prompt and 7× for a ~3,000-token prompt on an RTX 3050 (see above).
 
 ### 4. Speculative Decoding with Zero Distribution Drift
 Autoregressive decoding is memory-bandwidth bound on single tokens.
@@ -343,7 +358,7 @@ To code on large repositories without exceeding context limits or losing context
 # Index repository structure into a 1500-token prompt skeleton
 mini-infer repomap . --max-tokens 1500 --output repomap.md
 ```
-Combined with `mini-infer`'s radix prefix caching, this skeleton stays warm in GPU memory across queries, enabling surgical code assistance on massive repositories with sub-15ms TTFT.
+Combined with `mini-infer`'s radix prefix caching, this skeleton stays warm in GPU memory across queries, so follow-up questions only pay prefill for the new text.
 
 ### 10. Embedded Agent Cognitive Memory Engine (v0.2.7)
 Prevent context window bloat and eliminate external vector DB dependencies with zero-dependency long-term cognitive storage:
@@ -444,7 +459,7 @@ Connect `mini-infer` to Continue for free in-editor autocomplete, inline code re
 ```
 
 ### 3. Why `mini-infer` Excels at Agentic Workloads
-* **Radix Prefix Caching**: Autonomous agents repeatedly send full repository file trees, schemas, and instructions on every step. With radix prefix caching, TTFT drops from 500 ms to **< 15 ms**, completely bypassing redundant quadratic prompt prefill.
+* **Radix Prefix Caching**: Autonomous agents repeatedly send full repository file trees, schemas, and instructions on every step. With radix prefix caching, only the new suffix is prefilled; on an RTX 3050 a ~3,000-token shared prefix goes from 480 ms to 68 ms TTFT.
 * **Continuous Batching for Multi-Agent Loops**: When orchestrating multi-agent loops (e.g., Planner + Critic + Coder in AutoGen, CrewAI, or LangGraph), `mini-infer` dynamically batches concurrent subagent streams in a unified `[batch_size, 1]` forward pass.
 * **Graceful Preemption**: Prevents out-of-memory crashes during burst multi-agent tool loops by re-queueing lowest-priority sequences back to `WAITING`.
 
