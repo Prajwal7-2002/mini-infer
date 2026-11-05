@@ -65,3 +65,18 @@ matched the Hugging Face reference for 0/40 tokens and ignored the system prompt
   un-warmed first request (CUDA start-up) with a warm second one, on the broken cache. `test_real_repo.py`
   now warms up first.
 
+
+## 2026-11-05: v0.2.9 - Prefix-cache eviction under memory pressure
+
+- **Bug**: `PrefixCache.evict_lru` existed but nothing called it. Every finished prompt's blocks stayed cached,
+  so a long-running server eventually raised `MemoryError: Paged KV-Cache pool exhausted` and dropped requests
+  (14 of 24 failed at 4 concurrent users after ~70 requests in a servebench sweep), with only ~100 of 1,024
+  blocks actually in use.
+- **Fix**: `BlockPool.ensure_free(n)` asks a reclaimer for missing blocks before failing; the engine wires it to
+  LRU eviction. Admission, prefill slot allocation and the decode pre-check all go through it. Eviction skips
+  blocks a running request still holds (dropping the cache's reference would free nothing).
+- **Tests**: 40 distinct prompts through a 32-block pool (failed on the old code); eviction never frees in-use
+  blocks; the LRU unit test now checks both cases.
+- **Benchmark** (servebench, RTX 3050 laptop, 0.5B bf16): 24/24 requests at c=1/2/4; 8.5 / 15.3 / 26.4 tok/s.
+  The GPU is ~32% busy at ~810 MHz: mini-infer is CPU-bound (Python dispatch of per-layer paged-KV gathers),
+  so results vary with the laptop's power state (14.9 tok/s at c=1 in an earlier run).

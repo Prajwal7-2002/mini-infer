@@ -62,3 +62,33 @@ def test_prefix_cache_is_actually_hit():
     seq = engine.add_request(PROMPTS["b"], max_tokens=1, request_id="hit")
     engine.step()
     assert seq.block_table.physical_block_ids[:2] == shared
+
+
+def test_prefix_cache_evicts_instead_of_exhausting_the_pool():
+    """Regression: cached prefixes were never evicted, so a long-running server ran out of
+    KV blocks (MemoryError) after enough distinct prompts, even with few requests active."""
+    engine = create_toy_engine(max_batch_size=4)  # 32 blocks of 16 tokens
+    for wave in range(10):  # 40 distinct 40-token prompts, 4 at a time
+        seqs = [
+            engine.add_request(
+                [(wave * 31 + k * 7 + i) % 120 + 1 for i in range(40)],
+                max_tokens=8,
+                request_id=f"w{wave}-{k}",
+            )
+            for k in range(4)
+        ]
+        while engine.scheduler.has_unfinished_sequences():
+            engine.step()
+        assert all(len(s.output_token_ids) == 8 for s in seqs)
+    assert engine.block_pool.num_free > 0
+
+
+def test_eviction_never_frees_blocks_in_use():
+    engine = create_toy_engine()
+    _prefill_and_read_kv(engine, PROMPTS["a"], "cached")
+    seq = engine.add_request(PROMPTS["b"], max_tokens=50, request_id="running")
+    engine.step()  # prefill: reuses the two shared blocks
+    shared = seq.block_table.physical_block_ids[:2]
+    engine.prefix_cache.evict_lru(engine.block_pool, count=engine.block_pool.num_blocks)
+    assert all(engine.block_pool.ref_counts[b] >= 1 for b in shared)
+    assert all(b not in engine.block_pool.free_list for b in shared)

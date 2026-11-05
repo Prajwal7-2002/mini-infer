@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import torch
 
 
@@ -86,9 +88,19 @@ class BlockPool:
         """Number of currently available unallocated physical blocks."""
         return len(self.free_list)
 
+    # Called with the number of blocks still missing when the free list is short; returns
+    # how many it freed. The engine wires this to prefix-cache LRU eviction.
+    reclaimer: Callable[[int], int] | None = None
+
+    def ensure_free(self, count: int) -> bool:
+        """Make at least ``count`` blocks free, reclaiming cached blocks if needed."""
+        if len(self.free_list) < count and self.reclaimer is not None:
+            self.reclaimer(count - len(self.free_list))
+        return len(self.free_list) >= count
+
     def allocate_block(self) -> int:
         """Allocate a single physical block from the free list."""
-        if not self.free_list:
+        if not self.ensure_free(1):
             raise MemoryError("Paged KV-Cache pool exhausted! Out of GPU memory blocks.")
         block_id = self.free_list.pop()
         self.ref_counts[block_id] = 1
@@ -96,7 +108,7 @@ class BlockPool:
 
     def allocate_blocks(self, count: int) -> list[int]:
         """Allocate multiple physical blocks."""
-        if len(self.free_list) < count:
+        if not self.ensure_free(count):
             raise MemoryError(
                 f"Cannot allocate {count} blocks; only {len(self.free_list)} available."
             )

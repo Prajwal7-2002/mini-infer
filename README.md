@@ -381,22 +381,30 @@ mini-infer memory consolidate
 
 ---
 
-## ⚡ Real-World Benchmarks on Real Hardware (v0.2.1)
+## ⚡ Real-World Benchmarks on Real Hardware (v0.2.9)
 
-Measured live using Flagship #1 [servebench](https://github.com/Prajwal7-2002/servebench) on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU** running `Qwen2.5-0.5B-Instruct` in pure PyTorch CUDA with unified batched paged decoding:
+Measured with [servebench](https://github.com/Prajwal7-2002/servebench) on an **NVIDIA GeForce RTX 3050 6GB Laptop GPU**,
+`Qwen2.5-0.5B-Instruct` (bf16), ~286-token prompts, 128 output tokens, 24 requests per level:
 
 ```bash
-servebench run --url http://127.0.0.1:8000/v1 --model Qwen/Qwen2.5-0.5B-Instruct --concurrency 1,2,4 --num-requests 12
+servebench run --url http://127.0.0.1:8000/v1 --model Qwen/Qwen2.5-0.5B-Instruct   --concurrency 1,2,4 --num-requests 24 --input-len 256 --output-len 128 --ignore-eos --warmup 2 --seed 1
 ```
 
-| Concurrency | Requests (OK / Fail) | Throughput (tok/s) | Gain vs v0.1 | TTFT p50 (ms) | TPOT p50 (ms) | VRAM Peak (MB) | Power Avg (W) | Tok/Joule |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **c = 1** | **12 / 0** | **13.6 tok/s** | **+41.6%** | 556 ms | 70 ms | 1,544 MB | 13.4 W | **1.01** |
-| **c = 2** | **12 / 0** | **18.6 tok/s** | **+55.0%** | 1,162 ms | 98 ms | 1,548 MB | 13.1 W | **1.41** |
-| **c = 4** | **12 / 0** | **27.0 tok/s** | **+130.8%** | 2,456 ms | 126 ms | 1,634 MB | 13.2 W | **2.04** |
+| Concurrency | Requests (OK / Fail) | Throughput | TTFT p50 | TPOT p50 | Power avg | Tok/Joule | GPU clock avg |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **c = 1** | 24 / 0 | 8.5 tok/s | 118 ms | 117 ms | 14.1 W | 0.60 | 811 MHz |
+| **c = 2** | 24 / 0 | 15.3 tok/s | 255 ms | 146 ms | 14.2 W | 1.07 | 814 MHz |
+| **c = 4** | 24 / 0 | 26.4 tok/s | 756 ms | 151 ms | 14.9 W | 1.77 | 891 MHz |
 
-> [!TIP]
-> **Systems Insight**: Combining active decode streams into a unified `[batch_size, 1]` forward pass reduced GPU DRAM weight transfer pressure by over 4×, driving **2.3× higher generation throughput** at $c=4$ while doubling energy efficiency to **2.04 Tokens / Joule** on a 13 W laptop GPU.
+* **Batching works**: 4 users get 3.1× the total throughput of 1 user, while each user's TPOT rises only 29%.
+* **mini-infer is CPU-bound**: the GPU is ~32% busy and clocks down to ~810 MHz. Each decode step runs many small
+  PyTorch operations from Python (per-layer paged-KV gathers), so CPU speed and the laptop's power state change
+  the result run to run; an earlier run on the same laptop measured 14.9 tok/s at c=1. For comparison, Ollama
+  (llama.cpp) serves the 4-bit version of this model at ~190 tok/s on the same GPU. mini-infer is built to show
+  how the algorithms work, not to compete on speed.
+* Versions before 0.2.9 failed requests with `MemoryError` once enough distinct prompts had been served (14 of
+  24 failed at c=4 in this sweep), because cached prefixes were never evicted. The v0.2.1 numbers previously
+  shown here were measured before that and before the prefix-cache correctness fix in 0.2.8.
 
 ### 🏎️ Speculative Decoding Benchmark (0.5B Draft Proposer → 1.5B Target Verifier)
 

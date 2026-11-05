@@ -59,9 +59,14 @@ def test_prefix_cache_lru_eviction():
     cache.insert_prefix_block(tuple(range(16)), b0, pool)
 
     assert pool.num_free < 4
-    # Evict block
+    # Still held by its sequence: evicting would free no memory, so it is skipped
+    assert cache.evict_lru(pool, count=1) == 0
+
+    # Sequence finishes; only the cache holds the block now, so it is evicted and freed
+    pool.free_block(b0)
     evicted = cache.evict_lru(pool, count=1)
     assert evicted == 1
+    assert pool.num_free == 4
 
     # Attempting to match now yields a miss
     matched, num_cached = cache.match_prefix(list(range(16)), pool)
