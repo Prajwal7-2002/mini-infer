@@ -160,25 +160,37 @@ class BlockPool:
             k_seq = k_seq.squeeze(0)
             v_seq = v_seq.squeeze(0)
         num_tokens = k_seq.shape[1]
-        for i in range(num_tokens):
-            token_pos = start_token_idx + i
-            block_idx = token_pos // self.block_size
-            slot_offset = token_pos % self.block_size
-            block_id = physical_block_ids[block_idx]
-            k_t = k_seq[:, i, :]
-            v_t = v_seq[:, i, :]
-            if self.kv_cache_dtype == "int8":
-                k_scale = torch.clamp(k_t.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
-                v_scale = torch.clamp(v_t.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
-                k_q = torch.clamp(torch.round(k_t / k_scale), -128, 127).to(torch.int8)
-                v_q = torch.clamp(torch.round(v_t / v_scale), -128, 127).to(torch.int8)
-                self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_q
-                self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_q
-                self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale
-                self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale
-            else:
-                self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_t
-                self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_t
+        if num_tokens == 0:
+            return
+        # Vectorized scatter: one indexed copy instead of a Python loop per token.
+        positions = torch.arange(start_token_idx, start_token_idx + num_tokens)
+        table = torch.tensor(physical_block_ids, dtype=torch.long)
+        block_ids = table[positions // self.block_size].to(self.device)
+        offsets = (positions % self.block_size).to(self.device)
+        # [num_kv_heads, T, head_dim] -> [T, num_kv_heads, head_dim], matching the
+        # shape produced by indexing cache[block_ids, :, offsets, :].
+        k_t = k_seq.permute(1, 0, 2)
+        v_t = v_seq.permute(1, 0, 2)
+        if self.kv_cache_dtype == "int8":
+            k_scale = torch.clamp(k_t.abs().amax(dim=-1, keepdim=True) / 127.0, min=1e-7)
+            v_scale = torch.clamp(v_t.abs().amax(dim=-1, keepdim=True) / 127.0, min=1e-7)
+            k_q = torch.clamp(torch.round(k_t / k_scale), -128, 127).to(torch.int8)
+            v_q = torch.clamp(torch.round(v_t / v_scale), -128, 127).to(torch.int8)
+            self.key_caches[layer_idx][block_ids, :, offsets, :] = k_q
+            self.value_caches[layer_idx][block_ids, :, offsets, :] = v_q
+            self.key_scales[layer_idx][block_ids, :, offsets, :] = k_scale.to(
+                self.key_scales[layer_idx].dtype
+            )
+            self.value_scales[layer_idx][block_ids, :, offsets, :] = v_scale.to(
+                self.value_scales[layer_idx].dtype
+            )
+        else:
+            self.key_caches[layer_idx][block_ids, :, offsets, :] = k_t.to(
+                self.key_caches[layer_idx].dtype
+            )
+            self.value_caches[layer_idx][block_ids, :, offsets, :] = v_t.to(
+                self.value_caches[layer_idx].dtype
+            )
 
     def read_sequence_kv(
         self,

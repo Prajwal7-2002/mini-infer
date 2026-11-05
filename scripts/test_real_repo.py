@@ -86,6 +86,12 @@ def main():
     )
     assert engine.block_pool.key_caches[0].dtype == torch.int8, "INT8 verification failed"
 
+    # Warm-up: the first engine step pays CUDA/kernel initialisation. Without this,
+    # Turn 1 TTFT includes start-up cost and the Turn 2 "speedup" is inflated.
+    engine.add_request(tokenizer.encode("Hello"), max_tokens=2, request_id="warmup")
+    while engine.scheduler.has_unfinished_sequences():
+        engine.step()
+
     # 3. Turn 1: Cold Prefill with EdgeSLM Repo-Map + Code Generation Task
     print("\n[3/4] Turn 1: Synthesizing new endpoint from EdgeSLM repo map (Cold Start)...")
     system_prompt = (

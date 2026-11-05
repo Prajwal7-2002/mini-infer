@@ -141,12 +141,12 @@ Once the server is running, you can connect your favorite IDE extension (Cursor,
 You ask: *"Where is authentication handled and how can I add a JWT refresh endpoint?"*
 * **Prompt**: Includes `repo_context.md` (~1,000 tokens) + your question.
 * **Engine**: Computes prefill for the full prompt and stores the KV blocks in the prefix cache table.
-* **TTFT**: ~40s (on laptop GPU).
+* **TTFT**: ~140 ms for ~935 tokens, ~480 ms for ~3,000 tokens (Qwen2.5-0.5B, RTX 3050, warmed up).
 
 ### Turn 2: Follow-up (Prefix Cache Hit)
 You ask: *"Now write the pytest unit test for the refresh logic."*
 * **Engine**: Detects that the 1,000-token repository skeleton is already resident in GPU DRAM.
-* **TTFT**: **~0.5s – 1.0s (38× – 70× faster!)**
+* **TTFT**: ~66-68 ms: 2.2× faster at ~935 tokens, 7× at ~3,000 tokens (`scripts/bench_prefix_cache.py`).
 * The model immediately begins generating tokens without re-processing the codebase.
 
 ---
@@ -231,12 +231,12 @@ To prove zero-hallucination context injection and VRAM stability on physical con
 
 [3/4] Turn 1: Synthesizing new endpoint from EdgeSLM repo map (Cold Start)...
       Total prompt length: 953 tokens
-      TTFT (Time To First Token): 23,544.5 ms
+      TTFT (Time To First Token): <measured on your machine>
       Generated 100 tokens
 
 [4/4] Turn 2: Generating unit tests for the new endpoint (Prefix Cache Hit)...
-      TTFT (Turn 2 - Prefix Cached): 793.1 ms
-      Prefix Cache Latency Speedup: 29.7x faster TTFT!
+      TTFT (Turn 2 - Prefix Cached): <measured on your machine>
+      Prefix Cache Latency Speedup: <ratio>
       Generated 80 tokens in 8,904.5 ms
 ========================================================================
 ```
