@@ -11,7 +11,7 @@ re-running an earlier prompt to detect corruption of shared cached blocks.
 import pytest
 import torch
 
-from tests.test_engine import create_toy_engine
+from test_engine import create_toy_engine
 
 PREFIX = [(7 * i + 3) % 120 + 1 for i in range(40)]  # 2.5 blocks of 16 tokens
 PROMPTS = {
