@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from mini_infer import __version__
 from mini_infer.engine import InferenceEngine
 
 
@@ -28,6 +29,14 @@ class ChatCompletionRequest(BaseModel):
 app = FastAPI(title="mini-infer", description="Continuous-Batching LLM Inference Server")
 engine: InferenceEngine | None = None
 tokenizer = None
+# Hugging Face repo id or local path of the model being served (set by `mini-infer serve`).
+model_name: str = "Qwen/Qwen2.5-0.5B-Instruct"
+
+
+def short_model_id(name: str) -> str:
+    """'Qwen/Qwen2.5-1.5B-Instruct' -> 'qwen2.5-1.5b' (the short alias clients may use)."""
+    base = name.replace("\\", "/").rstrip("/").split("/")[-1].lower()
+    return base.removesuffix("-instruct")
 
 
 def format_qwen_chat(messages: list[ChatMessage]) -> str:
@@ -41,26 +50,18 @@ def format_qwen_chat(messages: list[ChatMessage]) -> str:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "engine": "mini-infer"}
+    return {"status": "ok", "engine": "mini-infer", "version": __version__, "model": model_name}
 
 
 @app.get("/v1/models")
 async def list_models():
+    """The model actually being served, under its full name and its short alias."""
+    created = int(time.time())
+    ids = list(dict.fromkeys([model_name, short_model_id(model_name)]))
     return {
         "object": "list",
         "data": [
-            {
-                "id": "qwen2.5-0.5b",
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "mini-infer",
-            },
-            {
-                "id": "Qwen/Qwen2.5-0.5B-Instruct",
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "mini-infer",
-            },
+            {"id": i, "object": "model", "created": created, "owned_by": "mini-infer"} for i in ids
         ],
     }
 
