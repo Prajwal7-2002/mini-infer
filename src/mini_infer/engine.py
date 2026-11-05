@@ -51,6 +51,11 @@ class InferenceEngine:
 
         # 2. Prefix Cache (Radix / Hash based)
         self.prefix_cache = PrefixCache(block_size=block_size) if enable_prefix_caching else None
+        if self.prefix_cache is not None:
+            # Under memory pressure, cached prefixes give their blocks back (LRU first)
+            # instead of the allocator failing the request.
+            cache = self.prefix_cache
+            self.block_pool.reclaimer = lambda n: cache.evict_lru(self.block_pool, n)
 
         # 3. Continuous Batching Scheduler
         self.scheduler = ContinuousScheduler(
@@ -188,7 +193,7 @@ class InferenceEngine:
         active_decodes = [s for s in decode_seqs if s.status != SequenceStatus.FINISHED]
         if active_decodes:
             # Memory pressure protection: preempt newest running sequence if free blocks exhausted
-            while self.block_pool.num_free < len(active_decodes) and len(active_decodes) > 1:
+            while not self.block_pool.ensure_free(len(active_decodes)) and len(active_decodes) > 1:
                 preempted = active_decodes.pop()
                 self.scheduler.preempt(preempted)
 

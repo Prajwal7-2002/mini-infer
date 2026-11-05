@@ -65,7 +65,14 @@ class PrefixCache:
             self.last_accessed[physical_block_id] = time.time()
 
     def evict_lru(self, block_pool: BlockPool, count: int = 1) -> int:
-        """Evict the least recently used cached prefix blocks when VRAM is tight."""
+        """Free up to ``count`` blocks by evicting least recently used cached prefixes.
+
+        Only blocks held by the cache alone are evicted: dropping the cache's reference
+        to a block a running request still uses would free no memory.
+
+        Returns:
+            Number of blocks returned to the free pool.
+        """
         evicted = 0
         # Sort by access timestamp ascending
         sorted_blocks = sorted(self.last_accessed.items(), key=lambda x: x[1])
@@ -73,6 +80,8 @@ class PrefixCache:
         for block_id, _ in sorted_blocks:
             if evicted >= count:
                 break
+            if block_pool.ref_counts[block_id] > 1:
+                continue
             # Find the cache key
             keys_to_delete = [k for k, v in self.cache.items() if v == block_id]
             for k in keys_to_delete:

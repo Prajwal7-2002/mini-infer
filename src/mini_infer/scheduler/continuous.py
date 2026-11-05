@@ -168,7 +168,7 @@ class ContinuousScheduler:
             candidate = self.waiting[0]
             # Minimum blocks needed to start chunked prefill
             blocks_needed = min(2, (candidate.num_prompt_tokens + 15) // 16)
-            if self.block_pool.num_free < blocks_needed:
+            if not self.block_pool.ensure_free(blocks_needed):
                 # KV pool is full; stop admitting until older requests complete
                 break
 
