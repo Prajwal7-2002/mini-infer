@@ -31,6 +31,7 @@ theme:
 
 nav:
   - Overview: index.md
+  - Interactive Studio: studio.html
   - Quickstart: quickstart.md
   - User Guides:
       - Coding on Large Codebases: guides/coding-projects.md

@@ -12,6 +12,8 @@ A minimal, educational, and high-performance **continuous-batching LLM inference
 
 ## Why mini-infer?
 
+> 🌐 **Interactive Web Studio Live:** Simulate PagedAttention GPU memory pools, radix tree prefix caching, and speculative decoding directly in your browser with zero cold start: [**Interactive Studio**](studio.html) | [**Hugging Face Space**](https://huggingface.co/spaces/prajwalpujari16/mini-infer)
+
 Most practitioners know how to *call* an inference engine (`ollama run` or `vllm serve`). However, the underlying systems engineering that powers modern production LLM serving:
 
 1. **How tensors are paged in GPU VRAM** to eliminate external memory fragmentation.

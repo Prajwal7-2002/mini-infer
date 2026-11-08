@@ -5,6 +5,7 @@
 # mini-infer 🚀
 
 [![PyPI version](https://img.shields.io/pypi/v/mini-infer.svg?cacheSeconds=300)](https://pypi.org/project/mini-infer/)
+[![HuggingFace Space](https://img.shields.io/badge/🤗_HuggingFace-Spaces_Studio-blue)](https://huggingface.co/spaces/prajwalpujari16/mini-infer)
 [![Sigstore Provenance](https://img.shields.io/badge/Sigstore-Provenance_Verified-success)](https://pypi.org/project/mini-infer/#security)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-teal.svg)](https://prajwal7-2002.github.io/mini-infer/)
 [![CI](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml/badge.svg)](https://github.com/Prajwal7-2002/mini-infer/actions/workflows/ci.yml)
@@ -22,6 +23,8 @@ Most developers only know how to *call* an inference engine (`ollama run` or `vl
 > [!IMPORTANT]
 > **Our Mission**: *Safe, secure, and optimized for every machine.*  
 > We believe high-performance LLM systems should not require \$10,000 enterprise GPUs, cloud API subscriptions, or opaque proprietary silos. `mini-infer` democratizes modern serving systems, empowering every developer to run autonomous AI agents and personal LLMs 100% privately, securely, and free of cost on everyday hardware.
+
+> 🌐 **Interactive Web Studio Live:** Simulate PagedAttention GPU memory pools, radix tree prefix caching, and speculative decoding directly in your browser with zero cold start: [**huggingface.co/spaces/prajwalpujari16/mini-infer**](https://huggingface.co/spaces/prajwalpujari16/mini-infer)
 
 ---
 
