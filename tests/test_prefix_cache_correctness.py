@@ -40,7 +40,10 @@ def _reference_kv(engine, prompt):
     return past
 
 
-@pytest.mark.parametrize("kv_cache_dtype,atol", [("auto", 1e-5), ("int8", 5e-2)])
+@pytest.mark.parametrize(
+    "kv_cache_dtype,atol",
+    [("auto", 1e-5), ("int8", 5e-2), ("fp8", 1e-1), ("int4", 0.5)],
+)
 @pytest.mark.parametrize("chunk", [16, 512])
 def test_prefix_cached_kv_matches_full_forward(kv_cache_dtype, atol, chunk):
     engine = create_toy_engine(chunked_prefill_size=chunk, kv_cache_dtype=kv_cache_dtype)

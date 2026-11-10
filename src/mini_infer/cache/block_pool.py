@@ -57,17 +57,21 @@ class BlockPool:
             if head_dim % 2 != 0:
                 raise ValueError(f"INT4 sub-byte KV cache requires an even head_dim, got {head_dim}.")
             storage_dim = head_dim // 2
+            # 0x88 (136) stores two 4-bit zeros ((0 + 8) | ((0 + 8) << 4))
+            # Ensures unwritten slots unpack cleanly to 0.0 in target float precision
             self.key_caches: list[torch.Tensor] = [
-                torch.zeros(
+                torch.full(
                     (num_blocks, num_kv_heads, block_size, storage_dim),
+                    0x88,
                     device=device,
                     dtype=torch.uint8,
                 )
                 for _ in range(num_layers)
             ]
             self.value_caches: list[torch.Tensor] = [
-                torch.zeros(
+                torch.full(
                     (num_blocks, num_kv_heads, block_size, storage_dim),
+                    0x88,
                     device=device,
                     dtype=torch.uint8,
                 )

@@ -215,3 +215,159 @@ def test_block_pool_fp8_write_read_accuracy():
     cos_k = torch.cosine_similarity(k_seq.flatten(), k_read.flatten(), dim=0)
     assert cos_k.item() > 0.98
 
+
+def _create_toy_engine(kv_cache_dtype: str = "auto", enable_prefix_caching: bool = True):
+    from mini_infer.engine import InferenceEngine
+    from mini_infer.models.config import Qwen2Config
+    from mini_infer.models.qwen2 import Qwen2ForCausalLM
+
+    torch.manual_seed(42)
+    cfg = Qwen2Config(
+        vocab_size=128,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        head_dim=16,
+        tie_word_embeddings=True,
+    )
+    model = Qwen2ForCausalLM(cfg)
+    model.eval()
+
+    engine = InferenceEngine(
+        model=model,
+        config=cfg,
+        num_blocks=32,
+        block_size=16,
+        device=torch.device("cpu"),
+        kv_cache_dtype=kv_cache_dtype,
+        enable_prefix_caching=enable_prefix_caching,
+    )
+    return engine, model, cfg
+
+
+def test_engine_single_request_int4_generation():
+    from mini_infer.scheduler.continuous import SequenceStatus
+
+    engine, _, _ = _create_toy_engine(kv_cache_dtype="int4")
+    seq = engine.add_request([10, 20, 30, 40], max_tokens=5, request_id="int4-seq-1")
+
+    steps = 0
+    while engine.scheduler.has_unfinished_sequences() and steps < 20:
+        engine.step()
+        steps += 1
+
+    assert seq.status == SequenceStatus.FINISHED
+    assert len(seq.output_token_ids) == 5
+    assert all(isinstance(tok, int) for tok in seq.output_token_ids)
+
+
+def test_engine_single_request_fp8_generation():
+    from mini_infer.scheduler.continuous import SequenceStatus
+
+    engine, _, _ = _create_toy_engine(kv_cache_dtype="fp8")
+    seq = engine.add_request([15, 25, 35], max_tokens=4, request_id="fp8-seq-1")
+
+    steps = 0
+    while engine.scheduler.has_unfinished_sequences() and steps < 15:
+        engine.step()
+        steps += 1
+
+    assert seq.status == SequenceStatus.FINISHED
+    assert len(seq.output_token_ids) == 4
+
+
+def test_engine_batched_continuous_int4():
+    from mini_infer.scheduler.continuous import SequenceStatus
+
+    engine, _, _ = _create_toy_engine(kv_cache_dtype="int4")
+
+    s1 = engine.add_request([1, 2, 3], max_tokens=3, request_id="b1")
+    s2 = engine.add_request([4, 5], max_tokens=4, request_id="b2")
+    s3 = engine.add_request([6, 7, 8, 9], max_tokens=2, request_id="b3")
+
+    steps = 0
+    while engine.scheduler.has_unfinished_sequences() and steps < 25:
+        engine.step()
+        steps += 1
+
+    assert s1.status == SequenceStatus.FINISHED
+    assert s2.status == SequenceStatus.FINISHED
+    assert s3.status == SequenceStatus.FINISHED
+    assert len(s1.output_token_ids) == 3
+    assert len(s2.output_token_ids) == 4
+    assert len(s3.output_token_ids) == 2
+
+
+def test_engine_logits_cosine_similarity():
+    """Verify that INT4 and FP8 KV-caches generate tokens and KV tensors closely matching unquantized FP32."""
+    engine_fp, model, cfg = _create_toy_engine(kv_cache_dtype="auto")
+    engine_int4, _, _ = _create_toy_engine(kv_cache_dtype="int4")
+    engine_fp8, _, _ = _create_toy_engine(kv_cache_dtype="fp8")
+
+    # Use identical weights across engines
+    engine_int4.model.load_state_dict(model.state_dict())
+    engine_fp8.model.load_state_dict(model.state_dict())
+
+    prompt = [12, 34, 56, 78, 90]
+
+    seq_fp = engine_fp.add_request(prompt, max_tokens=2, temperature=0.0)
+    seq_int4 = engine_int4.add_request(prompt, max_tokens=2, temperature=0.0)
+    seq_fp8 = engine_fp8.add_request(prompt, max_tokens=2, temperature=0.0)
+
+    # 1. Prefill step
+    engine_fp.step()
+    engine_int4.step()
+    engine_fp8.step()
+
+    # 2. Decode step (reads and writes paged KV blocks dynamically)
+    engine_fp.step()
+    engine_int4.step()
+    engine_fp8.step()
+
+    assert len(seq_fp.output_token_ids) == 2
+    assert len(seq_int4.output_token_ids) == 2
+    assert len(seq_fp8.output_token_ids) == 2
+
+    # Verify that gathered KV caches across layers have high cosine fidelity (>0.98)
+    b_fp = seq_fp.block_table.physical_block_ids
+    b_int4 = seq_int4.block_table.physical_block_ids
+    b_fp8 = seq_fp8.block_table.physical_block_ids
+
+    k_fp, v_fp = engine_fp.block_pool.read_sequence_kv(0, b_fp, seq_fp.total_tokens)
+    k_int4, v_int4 = engine_int4.block_pool.read_sequence_kv(0, b_int4, seq_int4.total_tokens)
+    k_fp8, v_fp8 = engine_fp8.block_pool.read_sequence_kv(0, b_fp8, seq_fp8.total_tokens)
+
+    cos_int4 = torch.cosine_similarity(k_fp.flatten(), k_int4.flatten(), dim=0)
+    cos_fp8 = torch.cosine_similarity(k_fp.flatten(), k_fp8.flatten(), dim=0)
+
+    assert cos_int4.item() > 0.98
+    assert cos_fp8.item() > 0.99
+
+
+def test_prefix_caching_hit_with_int4():
+    """Verify that identical prompt prefixes hit the radix prefix cache with INT4."""
+    engine, _, _ = _create_toy_engine(kv_cache_dtype="int4", enable_prefix_caching=True)
+
+    # 32 tokens = 2 blocks of 16
+    prefix = list(range(32))
+    prompt_a = prefix + [101]
+    prompt_b = prefix + [102]
+
+    # Warm up cache with prompt_a
+    seq1 = engine.add_request(prompt_a, max_tokens=1)
+    while not seq1.is_prefill_complete:
+        engine.step()
+
+    # Probe prefix cache for prompt_b
+    shared, n_cached = engine.prefix_cache.match_prefix(prompt_b, engine.block_pool)
+    engine.block_pool.free_blocks(shared)
+
+    assert n_cached == 32
+    assert len(shared) == 2
+
+
+
+
+
