@@ -366,8 +366,3 @@ def test_prefix_caching_hit_with_int4():
 
     assert n_cached == 32
     assert len(shared) == 2
-
-
-
-
-

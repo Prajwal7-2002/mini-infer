@@ -55,7 +55,9 @@ class BlockPool:
         # If kv_cache_dtype == "int8", store in int8 (1 byte) with per-token scale factors
         if self.kv_cache_dtype == "int4":
             if head_dim % 2 != 0:
-                raise ValueError(f"INT4 sub-byte KV cache requires an even head_dim, got {head_dim}.")
+                raise ValueError(
+                    f"INT4 sub-byte KV cache requires an even head_dim, got {head_dim}."
+                )
             storage_dim = head_dim // 2
             # 0x88 (136) stores two 4-bit zeros ((0 + 8) | ((0 + 8) << 4))
             # Ensures unwritten slots unpack cleanly to 0.0 in target float precision

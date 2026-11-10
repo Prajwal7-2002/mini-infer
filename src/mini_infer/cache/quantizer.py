@@ -5,6 +5,7 @@ with zero external C++/CUDA build requirements.
 """
 
 from typing import Literal
+
 import torch
 
 KVCacheDType = Literal["auto", "fp16", "fp32", "int8", "fp8", "int4"]
@@ -25,9 +26,7 @@ def get_kv_cache_bytes_per_elem(dtype_str: str) -> float:
         return 2.0
 
 
-def quantize_int8(
-    tensor: torch.Tensor, scale_dim: int = -1
-) -> tuple[torch.Tensor, torch.Tensor]:
+def quantize_int8(tensor: torch.Tensor, scale_dim: int = -1) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantize floating point tensor to symmetric INT8 with per-token scale factors.
 
     Args:
@@ -49,9 +48,7 @@ def dequantize_int8(
     return q_tensor.to(out_dtype) * scales
 
 
-def quantize_fp8(
-    tensor: torch.Tensor, scale_dim: int = -1
-) -> tuple[torch.Tensor, torch.Tensor]:
+def quantize_fp8(tensor: torch.Tensor, scale_dim: int = -1) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantize floating point tensor to FP8 (E4M3) with dynamic scale factors.
 
     Uses native torch.float8_e4m3fn stored via uint8 byte-view to ensure full compatibility
@@ -99,9 +96,7 @@ def quantize_and_pack_int4(
     """
     head_dim = tensor.shape[-1]
     if head_dim % 2 != 0:
-        raise ValueError(
-            f"INT4 sub-byte bit packing requires an even head_dim, got {head_dim}."
-        )
+        raise ValueError(f"INT4 sub-byte bit packing requires an even head_dim, got {head_dim}.")
 
     # 1. Symmetric scale factor over head_dim [-8, 7]
     scale = torch.clamp(tensor.abs().amax(dim=-1, keepdim=True) / 7.0, min=1e-7)

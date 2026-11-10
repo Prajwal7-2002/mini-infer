@@ -142,3 +142,4 @@
 
 - [ ] **Step 4: Commit Task 4 and push**
   Commit with message `feat(cli): expose INT4 and FP8 KV-cache compression in CLI and server`.
+
