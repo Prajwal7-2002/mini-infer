@@ -20,7 +20,9 @@ def serve(
     block_size: int = typer.Option(16, "--block-size", help="Tokens per physical block"),
     device: str = typer.Option("auto", "--device", help="Device (cuda/cpu/auto)"),
     kv_cache_dtype: str = typer.Option(
-        "auto", "--kv-cache-dtype", help="KV-cache data type: auto or int8 (50% memory saving)"
+        "auto",
+        "--kv-cache-dtype",
+        help="KV-cache precision: auto, int8 (50% savings), fp8 (50% savings), or int4 (75% savings)",
     ),
     quant: str | None = typer.Option(
         None,
@@ -48,7 +50,7 @@ def serve(
         )
         raise typer.Exit(1)
 
-    valid_kv_cache = ("auto", "int8")
+    valid_kv_cache = ("auto", "int8", "fp8", "int4")
     if kv_cache_dtype and kv_cache_dtype.lower() not in valid_kv_cache:
         console.print(
             f"[bold red]Error:[/bold red] Unsupported kv-cache-dtype '{kv_cache_dtype}'. Choose from: {', '.join(valid_kv_cache)}."
@@ -145,7 +147,9 @@ def chat(
     max_tokens: int = typer.Option(256, "--max-tokens", help="Maximum tokens per completion"),
     device: str = typer.Option("auto", "--device", help="Device (cuda/cpu/auto)"),
     kv_cache_dtype: str = typer.Option(
-        "int8", "--kv-cache-dtype", help="KV-cache precision (auto/int8)"
+        "auto",
+        "--kv-cache-dtype",
+        help="KV-cache precision: auto, int8 (50% savings), fp8 (50% savings), or int4 (75% savings)",
     ),
     quant: str | None = typer.Option(
         None,
@@ -180,7 +184,7 @@ def chat(
         )
         raise typer.Exit(1)
 
-    valid_kv_cache = ("auto", "int8")
+    valid_kv_cache = ("auto", "int8", "fp8", "int4")
     if kv_cache_dtype and kv_cache_dtype.lower() not in valid_kv_cache:
         console.print(
             f"[bold red]Error:[/bold red] Unsupported kv-cache-dtype '{kv_cache_dtype}'. Choose from: {', '.join(valid_kv_cache)}."

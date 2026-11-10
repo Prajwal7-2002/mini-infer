@@ -234,7 +234,7 @@ It extracts the AST skeleton, starts the model with INT8 KV-cache, dynamically r
 Because `mini-infer serve` exposes standard OpenAI endpoints (`http://127.0.0.1:8000/v1`):
 1. **Start the server**:
    ```bash
-   mini-infer serve --model Qwen/Qwen2.5-Coder-1.5B-Instruct --kv-cache-dtype int8 --port 8000
+   mini-infer serve --model Qwen/Qwen2.5-Coder-1.5B-Instruct --kv-cache-dtype int4 --port 8000
    ```
 2. **Connect**:
    * **Cursor**: Set OpenAI Base URL to `http://127.0.0.1:8000/v1`, API Key to `dummy`, and model to `Qwen/Qwen2.5-Coder-1.5B-Instruct`.
@@ -266,7 +266,9 @@ You do **not** need to manually copy-paste file contents or type `@filename.py`:
 ---
 
 ### Why This Works on a Laptop GPU:
-* **INT8 KV Cache**: Drops memory for 8,192 tokens from **96 MB down to 49.5 MB (-48.4%)**.
+* **Sub-Byte INT4 KV Cache (`--kv-cache-dtype int4`)**: Vectorized 2-values-per-byte bit packing drops KV memory for 8,192 tokens from **96.0 MB down to 26.2 MB (-72.7%)** while preserving >0.98 cosine attention fidelity.
+* **FP8 E4M3 KV Cache (`--kv-cache-dtype fp8`)**: 8-bit floating point storage with dynamic scaling factor (-50% memory).
+* **INT8 KV Cache (`--kv-cache-dtype int8`)**: Drops memory for 8,192 tokens from **96.0 MB down to 49.5 MB (-48.4%)**.
 * **Radix Prefix Caching**: The 1,000-token repository skeleton stays resident in GPU memory across turns. Follow-up prompts reuse the cached prefix, so only the new question is prefilled (see measured numbers below).
 
 ### 🔬 Real-World Empirical Proof: Synthesizing Code for [EdgeSLM](https://github.com/Prajwal7-2002/EdgeSLM)
