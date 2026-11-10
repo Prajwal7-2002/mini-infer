@@ -2,6 +2,15 @@ from collections.abc import Callable
 
 import torch
 
+from mini_infer.cache.quantizer import (
+    dequantize_fp8,
+    dequantize_int8,
+    quantize_and_pack_int4,
+    quantize_fp8,
+    quantize_int8,
+    unpack_and_dequantize_int4,
+)
+
 
 class BlockPool:
     """Fixed-size GPU memory pool for Paged KV-Cache blocks.
@@ -41,8 +50,65 @@ class BlockPool:
         self.ref_counts: dict[int, int] = {i: 0 for i in range(num_blocks)}
 
         # Pre-allocate physical KV tensors per layer
+        # If kv_cache_dtype == "int4", store sub-byte packed 4-bit values (head_dim // 2 in uint8)
+        # If kv_cache_dtype == "fp8", store in float8_e4m3fn (or int8 fallback)
         # If kv_cache_dtype == "int8", store in int8 (1 byte) with per-token scale factors
-        if self.kv_cache_dtype == "int8":
+        if self.kv_cache_dtype == "int4":
+            if head_dim % 2 != 0:
+                raise ValueError(f"INT4 sub-byte KV cache requires an even head_dim, got {head_dim}.")
+            storage_dim = head_dim // 2
+            self.key_caches: list[torch.Tensor] = [
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, storage_dim),
+                    device=device,
+                    dtype=torch.uint8,
+                )
+                for _ in range(num_layers)
+            ]
+            self.value_caches: list[torch.Tensor] = [
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, storage_dim),
+                    device=device,
+                    dtype=torch.uint8,
+                )
+                for _ in range(num_layers)
+            ]
+            self.key_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+            self.value_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+        elif self.kv_cache_dtype == "fp8":
+            # Stored as uint8 byte-view of Float8_e4m3fn (1 byte per element)
+            # Ensures indexing compatibility across both CPU and CUDA architectures
+            self.key_caches: list[torch.Tensor] = [
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim),
+                    device=device,
+                    dtype=torch.uint8,
+                )
+                for _ in range(num_layers)
+            ]
+            self.value_caches: list[torch.Tensor] = [
+                torch.zeros(
+                    (num_blocks, num_kv_heads, block_size, head_dim),
+                    device=device,
+                    dtype=torch.uint8,
+                )
+                for _ in range(num_layers)
+            ]
+            self.key_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+            self.value_scales: list[torch.Tensor] = [
+                torch.ones((num_blocks, num_kv_heads, block_size, 1), device=device, dtype=dtype)
+                for _ in range(num_layers)
+            ]
+        elif self.kv_cache_dtype == "int8":
             self.key_caches: list[torch.Tensor] = [
                 torch.zeros(
                     (num_blocks, num_kv_heads, block_size, head_dim),
@@ -82,6 +148,23 @@ class BlockPool:
             ]
             self.key_scales = None
             self.value_scales = None
+
+    def get_kv_cache_memory_bytes(self) -> dict[str, int]:
+        """Calculate exact physical memory footprint of the pre-allocated KV pool in bytes."""
+        key_bytes = sum(t.element_size() * t.numel() for t in self.key_caches)
+        value_bytes = sum(t.element_size() * t.numel() for t in self.value_caches)
+        scale_bytes = 0
+        if self.key_scales is not None:
+            scale_bytes += sum(t.element_size() * t.numel() for t in self.key_scales)
+        if self.value_scales is not None:
+            scale_bytes += sum(t.element_size() * t.numel() for t in self.value_scales)
+        total = key_bytes + value_bytes + scale_bytes
+        return {
+            "key_bytes": key_bytes,
+            "value_bytes": value_bytes,
+            "scale_bytes": scale_bytes,
+            "total_bytes": total,
+        }
 
     @property
     def num_free(self) -> int:
@@ -146,15 +229,27 @@ class BlockPool:
             k_slot = k_slot.squeeze(0)
             v_slot = v_slot.squeeze(0)
 
-        if self.kv_cache_dtype == "int8":
-            k_scale = torch.clamp(k_slot.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
-            v_scale = torch.clamp(v_slot.abs().max(dim=-1, keepdim=True).values / 127.0, min=1e-7)
-            k_q = torch.clamp(torch.round(k_slot / k_scale), -128, 127).to(torch.int8)
-            v_q = torch.clamp(torch.round(v_slot / v_scale), -128, 127).to(torch.int8)
+        if self.kv_cache_dtype == "int4":
+            k_packed, k_scale = quantize_and_pack_int4(k_slot)
+            v_packed, v_scale = quantize_and_pack_int4(v_slot)
+            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_packed
+            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_packed
+            self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale.to(self.dtype)
+            self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale.to(self.dtype)
+        elif self.kv_cache_dtype == "fp8":
+            k_q, k_scale = quantize_fp8(k_slot)
+            v_q, v_scale = quantize_fp8(v_slot)
             self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_q
             self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_q
-            self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale
-            self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale
+            self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale.to(self.dtype)
+            self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale.to(self.dtype)
+        elif self.kv_cache_dtype == "int8":
+            k_q, k_scale = quantize_int8(k_slot)
+            v_q, v_scale = quantize_int8(v_slot)
+            self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_q
+            self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_q
+            self.key_scales[layer_idx][block_id, :, slot_offset, :] = k_scale.to(self.dtype)
+            self.value_scales[layer_idx][block_id, :, slot_offset, :] = v_scale.to(self.dtype)
         else:
             self.key_caches[layer_idx][block_id, :, slot_offset, :] = k_slot
             self.value_caches[layer_idx][block_id, :, slot_offset, :] = v_slot
@@ -183,11 +278,31 @@ class BlockPool:
         # shape produced by indexing cache[block_ids, :, offsets, :].
         k_t = k_seq.permute(1, 0, 2)
         v_t = v_seq.permute(1, 0, 2)
-        if self.kv_cache_dtype == "int8":
-            k_scale = torch.clamp(k_t.abs().amax(dim=-1, keepdim=True) / 127.0, min=1e-7)
-            v_scale = torch.clamp(v_t.abs().amax(dim=-1, keepdim=True) / 127.0, min=1e-7)
-            k_q = torch.clamp(torch.round(k_t / k_scale), -128, 127).to(torch.int8)
-            v_q = torch.clamp(torch.round(v_t / v_scale), -128, 127).to(torch.int8)
+        if self.kv_cache_dtype == "int4":
+            k_packed, k_scale = quantize_and_pack_int4(k_t)
+            v_packed, v_scale = quantize_and_pack_int4(v_t)
+            self.key_caches[layer_idx][block_ids, :, offsets, :] = k_packed
+            self.value_caches[layer_idx][block_ids, :, offsets, :] = v_packed
+            self.key_scales[layer_idx][block_ids, :, offsets, :] = k_scale.to(
+                self.key_scales[layer_idx].dtype
+            )
+            self.value_scales[layer_idx][block_ids, :, offsets, :] = v_scale.to(
+                self.value_scales[layer_idx].dtype
+            )
+        elif self.kv_cache_dtype == "fp8":
+            k_q, k_scale = quantize_fp8(k_t)
+            v_q, v_scale = quantize_fp8(v_t)
+            self.key_caches[layer_idx][block_ids, :, offsets, :] = k_q
+            self.value_caches[layer_idx][block_ids, :, offsets, :] = v_q
+            self.key_scales[layer_idx][block_ids, :, offsets, :] = k_scale.to(
+                self.key_scales[layer_idx].dtype
+            )
+            self.value_scales[layer_idx][block_ids, :, offsets, :] = v_scale.to(
+                self.value_scales[layer_idx].dtype
+            )
+        elif self.kv_cache_dtype == "int8":
+            k_q, k_scale = quantize_int8(k_t)
+            v_q, v_scale = quantize_int8(v_t)
             self.key_caches[layer_idx][block_ids, :, offsets, :] = k_q
             self.value_caches[layer_idx][block_ids, :, offsets, :] = v_q
             self.key_scales[layer_idx][block_ids, :, offsets, :] = k_scale.to(
@@ -226,11 +341,21 @@ class BlockPool:
         k_blocks = self.key_caches[layer_idx][needed_block_ids]
         v_blocks = self.value_caches[layer_idx][needed_block_ids]
 
-        if self.kv_cache_dtype == "int8":
+        if self.kv_cache_dtype == "int4":
             k_scales = self.key_scales[layer_idx][needed_block_ids]
             v_scales = self.value_scales[layer_idx][needed_block_ids]
-            k_blocks = k_blocks.to(self.dtype) * k_scales
-            v_blocks = v_blocks.to(self.dtype) * v_scales
+            k_blocks = unpack_and_dequantize_int4(k_blocks, k_scales, out_dtype=self.dtype)
+            v_blocks = unpack_and_dequantize_int4(v_blocks, v_scales, out_dtype=self.dtype)
+        elif self.kv_cache_dtype == "fp8":
+            k_scales = self.key_scales[layer_idx][needed_block_ids]
+            v_scales = self.value_scales[layer_idx][needed_block_ids]
+            k_blocks = dequantize_fp8(k_blocks, k_scales, out_dtype=self.dtype)
+            v_blocks = dequantize_fp8(v_blocks, v_scales, out_dtype=self.dtype)
+        elif self.kv_cache_dtype == "int8":
+            k_scales = self.key_scales[layer_idx][needed_block_ids]
+            v_scales = self.value_scales[layer_idx][needed_block_ids]
+            k_blocks = dequantize_int8(k_blocks, k_scales, out_dtype=self.dtype)
+            v_blocks = dequantize_int8(v_blocks, v_scales, out_dtype=self.dtype)
 
         # Reshape to [num_kv_heads, total_slots, head_dim]
         n_b = len(needed_block_ids)

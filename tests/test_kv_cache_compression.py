@@ -92,3 +92,126 @@ def test_int4_odd_head_dim_raises():
     x_odd = torch.randn(4, 2, 63, dtype=torch.float32)
     with pytest.raises(ValueError, match="even head_dim"):
         quantize_and_pack_int4(x_odd)
+
+
+def test_block_pool_int4_allocation_and_memory():
+    from mini_infer.cache.block_pool import BlockPool
+
+    # 16 blocks, 16 tokens/block, 2 layers, 4 kv heads, 64 head_dim
+    pool_fp16 = BlockPool(
+        num_blocks=16,
+        block_size=16,
+        num_layers=2,
+        num_kv_heads=4,
+        head_dim=64,
+        device=torch.device("cpu"),
+        dtype=torch.float16,
+        kv_cache_dtype="auto",
+    )
+    pool_int4 = BlockPool(
+        num_blocks=16,
+        block_size=16,
+        num_layers=2,
+        num_kv_heads=4,
+        head_dim=64,
+        device=torch.device("cpu"),
+        dtype=torch.float16,
+        kv_cache_dtype="int4",
+    )
+
+    mem_fp16 = pool_fp16.get_kv_cache_memory_bytes()
+    mem_int4 = pool_int4.get_kv_cache_memory_bytes()
+
+    # Key cache in INT4 should store uint8 with head_dim // 2 = 32
+    assert pool_int4.key_caches[0].dtype == torch.uint8
+    assert pool_int4.key_caches[0].shape == (16, 4, 16, 32)
+
+    # Key + Value raw storage bytes must be exactly 25% of FP16 (4x reduction!)
+    raw_fp16 = mem_fp16["key_bytes"] + mem_fp16["value_bytes"]
+    raw_int4 = mem_int4["key_bytes"] + mem_int4["value_bytes"]
+    assert raw_int4 == raw_fp16 // 4
+
+
+def test_block_pool_int4_write_read_accuracy():
+    from mini_infer.cache.block_pool import BlockPool
+
+    pool = BlockPool(
+        num_blocks=8,
+        block_size=16,
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=32,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        kv_cache_dtype="int4",
+    )
+
+    b0 = pool.allocate_block()
+    b1 = pool.allocate_block()
+
+    # Write a sequence of 20 tokens (spreads across b0 and b1)
+    torch.manual_seed(101)
+    k_seq = torch.randn(2, 20, 32, dtype=torch.float32)
+    v_seq = torch.randn(2, 20, 32, dtype=torch.float32)
+
+    pool.write_sequence_kv(
+        layer_idx=0,
+        physical_block_ids=[b0, b1],
+        start_token_idx=0,
+        k_seq=k_seq,
+        v_seq=v_seq,
+    )
+
+    # Read back 20 tokens
+    k_read, v_read = pool.read_sequence_kv(
+        layer_idx=0,
+        physical_block_ids=[b0, b1],
+        num_tokens=20,
+    )
+
+    assert k_read.shape == (1, 2, 20, 32)
+    assert v_read.shape == (1, 2, 20, 32)
+
+    cos_k = torch.cosine_similarity(k_seq.flatten(), k_read.flatten(), dim=0)
+    cos_v = torch.cosine_similarity(v_seq.flatten(), v_read.flatten(), dim=0)
+
+    assert cos_k.item() > 0.98
+    assert cos_v.item() > 0.98
+
+
+def test_block_pool_fp8_write_read_accuracy():
+    from mini_infer.cache.block_pool import BlockPool
+
+    pool = BlockPool(
+        num_blocks=4,
+        block_size=16,
+        num_layers=1,
+        num_kv_heads=2,
+        head_dim=32,
+        device=torch.device("cpu"),
+        dtype=torch.float32,
+        kv_cache_dtype="fp8",
+    )
+
+    b0 = pool.allocate_block()
+    torch.manual_seed(202)
+    k_seq = torch.randn(2, 10, 32, dtype=torch.float32)
+    v_seq = torch.randn(2, 10, 32, dtype=torch.float32)
+
+    pool.write_sequence_kv(
+        layer_idx=0,
+        physical_block_ids=[b0],
+        start_token_idx=0,
+        k_seq=k_seq,
+        v_seq=v_seq,
+    )
+
+    k_read, v_read = pool.read_sequence_kv(
+        layer_idx=0,
+        physical_block_ids=[b0],
+        num_tokens=10,
+    )
+
+    cos_k = torch.cosine_similarity(k_seq.flatten(), k_read.flatten(), dim=0)
+    assert cos_k.item() > 0.98
+

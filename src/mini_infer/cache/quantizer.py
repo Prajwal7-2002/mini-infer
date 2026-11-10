@@ -54,26 +54,33 @@ def quantize_fp8(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Quantize floating point tensor to FP8 (E4M3) with dynamic scale factors.
 
-    Uses native torch.float8_e4m3fn when available; gracefully falls back to scaled INT8
-    on platforms lacking float8 tensor core instructions.
+    Uses native torch.float8_e4m3fn stored via uint8 byte-view to ensure full compatibility
+    with CPU and CUDA tensor advanced indexing kernels without kernel errors.
     """
     if hasattr(torch, "float8_e4m3fn"):
         # E4M3 maximum representable finite magnitude is 448.0
         max_val = 448.0
         scale = torch.clamp(tensor.abs().amax(dim=scale_dim, keepdim=True) / max_val, min=1e-7)
         scaled = torch.clamp(tensor / scale, -max_val, max_val)
-        q = scaled.to(torch.float8_e4m3fn)
+        q = scaled.to(torch.float8_e4m3fn).view(torch.uint8)
         return q, scale
     else:
-        # Fallback for older PyTorch versions
-        return quantize_int8(tensor, scale_dim=scale_dim)
+        # Fallback for platforms lacking float8
+        scale = torch.clamp(tensor.abs().amax(dim=scale_dim, keepdim=True) / 127.0, min=1e-7)
+        q = torch.clamp(torch.round(tensor / scale), -128, 127).to(torch.int8).view(torch.uint8)
+        return q, scale
 
 
 def dequantize_fp8(
     q_tensor: torch.Tensor, scales: torch.Tensor, out_dtype: torch.dtype
 ) -> torch.Tensor:
     """Dequantize FP8 tensor back to target floating-point precision."""
-    return q_tensor.to(out_dtype) * scales
+    if hasattr(torch, "float8_e4m3fn"):
+        fp8_val = q_tensor.view(torch.float8_e4m3fn)
+        return fp8_val.to(out_dtype) * scales
+    else:
+        int8_val = q_tensor.view(torch.int8)
+        return int8_val.to(out_dtype) * scales
 
 
 def quantize_and_pack_int4(
