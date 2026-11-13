@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Asynchronous Speculative Layer-Streaming Verifier for mini-infer.
 Integrates double-buffered prefetching to overlap weight transfers with tensor execution.
@@ -9,7 +8,7 @@ from __future__ import annotations
 import copy
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -34,13 +33,13 @@ class DoubleBufferedLayerPrefetcher:
         self.copy_stream = torch.cuda.Stream() if self.is_cuda else None
         self.ready_event = threading.Event()
         self.cuda_ready_event = torch.cuda.Event() if self.is_cuda else None
-        self.prefetch_thread: Optional[threading.Thread] = None
+        self.prefetch_thread: threading.Thread | None = None
 
         self.total_prefetch_time = 0.0
         self.total_stall_time = 0.0
         self.layers_prefetched = 0
 
-    def start_prefetch(self, next_weights: Dict[str, torch.Tensor]):
+    def start_prefetch(self, next_weights: dict[str, torch.Tensor]):
         self.ready_event.clear()
         standby_idx = 1 - self.active_idx
         standby_buf = self.buffers[standby_idx]
@@ -89,8 +88,8 @@ def streaming_speculative_step(
     prefix_ids: torch.Tensor,
     k_draft: int = 3,
     temperature: float = 0.0,
-    prefetcher: Optional[DoubleBufferedLayerPrefetcher] = None,
-) -> Tuple[List[int], int, Dict[str, Any]]:
+    prefetcher: DoubleBufferedLayerPrefetcher | None = None,
+) -> tuple[list[int], int, dict[str, Any]]:
     """Execute one round of Speculative Layer-Streaming with double-buffered prefetching.
 
     1. In-memory draft proposes k_draft tokens autoregressively.
@@ -102,8 +101,8 @@ def streaming_speculative_step(
         (newly_generated_tokens, num_accepted_draft_tokens, telemetry_dict)
     """
     curr_ids = prefix_ids.clone()
-    draft_tokens: List[int] = []
-    draft_probs: List[torch.Tensor] = []
+    draft_tokens: list[int] = []
+    draft_probs: list[torch.Tensor] = []
 
     # 1. Draft Proposal
     for _ in range(k_draft):
@@ -128,7 +127,7 @@ def streaming_speculative_step(
         target_logits, _ = target_model(cand_seq)
 
     # 3. Exact Rejection Sampling
-    accepted_tokens: List[int] = []
+    accepted_tokens: list[int] = []
     num_accepted = 0
     prefix_len = prefix_ids.shape[1]
 
