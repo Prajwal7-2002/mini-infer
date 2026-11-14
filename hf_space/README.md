@@ -31,3 +31,21 @@ Interactive simulation of GPU PagedAttention block pool allocation, copy-on-writ
 * **GitHub Repository:** [Prajwal7-2002/mini-infer](https://github.com/Prajwal7-2002/mini-infer)
 * **PyPI:** [`pip install mini-infer`](https://pypi.org/project/mini-infer/)
 * **Author:** Prajwal Pujari ([@Prajwal7-2002](https://github.com/Prajwal7-2002))
+
+---
+
+### Citation & Attribution
+
+If you use mini-infer, its pure-PyTorch PagedAttention block manager, radix prefix cache, or speculative decoding verifier in your research or systems, please cite:
+
+```bibtex
+@misc{pujari2024miniinfer,
+  author = {Pujari, Prajwal},
+  title = {mini-infer: Lightweight Continuous Batching Inference Runtime with PagedAttention},
+  year = {2024},
+  publisher = {Hugging Face},
+  howpublished = {\url{https://huggingface.co/spaces/prajwalpujari16/mini-infer}},
+  url = {https://github.com/Prajwal7-2002/mini-infer}
+}
+```
+
